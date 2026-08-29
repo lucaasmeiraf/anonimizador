@@ -1,0 +1,25 @@
+# Override opcional para medir o ganho de latencia do transformer em GPU.
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml build eval
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm eval
+#
+# Requer Docker Desktop com backend WSL2 e driver NVIDIA no host.
+# Atencao: com `gpus` o Docker ainda respeita network_mode: none, entao a prova
+# de offline continua valendo.
+x-gpu: &gpu
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      TORCH_INDEX: https://download.pytorch.org/whl/cu124
+  image: anonimizador-poc:fase0-gpu
+  gpus: all
+  environment:
+    ANON_DEVICE: cuda
+
+services:
+  eval:
+    <<: *gpu
+  dev:
+    <<: *gpu
+  cli:
+    <<: *gpu

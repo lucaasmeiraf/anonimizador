@@ -1,0 +1,11 @@
+# Nunca versionar documentos ou saídas
+anonimizador-poc/data/
+anonimizador-poc/out/
+anonimizador-poc/eval/datasets/
+anonimizador-poc/eval/report.md
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/

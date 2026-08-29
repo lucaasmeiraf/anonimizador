@@ -1,0 +1,16 @@
+[project]
+name = "anonimizador-poc"
+version = "0.1.0"
+description = "PoC Fase 0 - deteccao e redacao local de PII PT-BR em PDF"
+requires-python = ">=3.12,<3.13"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: testes que carregam modelos de NER",
+]

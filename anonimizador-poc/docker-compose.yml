@@ -1,0 +1,50 @@
+# Todos os servicos de execucao rodam SEM REDE.
+# Isso nao e conveniencia: e a prova executavel da restricao de soberania da
+# Fase 0. Se alguma etapa tentar falar com um servico externo, ela falha em vez
+# de vazar conteudo de documento.
+x-base: &base
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: anonimizador-poc:fase0
+  network_mode: none
+  volumes:
+    - ./src:/app/src:ro
+    - ./eval:/app/eval
+    - ./tests:/app/tests:ro
+    - ./data:/app/data
+    - ./out:/app/out
+  working_dir: /app
+
+services:
+  # Shell interativo para desenvolvimento.
+  dev:
+    <<: *base
+    entrypoint: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+
+  # Testes unitarios.
+  test:
+    <<: *base
+    entrypoint: ["python", "-m", "pytest"]
+    command: ["-q"]
+
+  # Gera o corpus sintetico (PDFs + gabarito).
+  corpus:
+    <<: *base
+    command: ["corpus", "--out", "/app/eval/datasets", "--n", "50"]
+
+  # Roda a avaliacao completa nas 3 configuracoes de NER.
+  eval:
+    <<: *base
+    command: ["eval", "--datasets", "/app/eval/datasets", "--report", "/app/eval/report.md"]
+
+  # Prova de offline: pipeline ponta a ponta, sem interface de rede.
+  offline-proof:
+    <<: *base
+    command: ["offline-proof"]
+
+  # CLI livre: docker compose run --rm cli redact --in ... --out ...
+  cli:
+    <<: *base
