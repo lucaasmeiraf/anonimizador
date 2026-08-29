@@ -100,6 +100,15 @@ vez de vazamento silencioso.
 
 ---
 
+## Documentação
+
+| Documento | Conteúdo |
+|---|---|
+| [`docs/01-inventario-marco-zero.md`](docs/01-inventario-marco-zero.md) | dependências, versões, licenças, modelos, estado de verificação |
+| [`docs/02-requisitos.md`](docs/02-requisitos.md) | requisitos e critérios de aceite |
+| [`docs/03-configuracao.md`](docs/03-configuracao.md) | todos os pontos de ajuste |
+| [`docs/04-implantacao.md`](docs/04-implantacao.md) | passo a passo, do host ao ambiente do cliente |
+
 ## Estrutura
 
 | Caminho | O que é |
