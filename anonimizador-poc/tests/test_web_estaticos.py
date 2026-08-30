@@ -182,6 +182,54 @@ def test_camada_de_texto_reajusta_quando_a_pagina_muda_de_tamanho():
     assert "ResizeObserver" in js
 
 
+def test_clique_em_tarja_manual_remove_em_vez_de_desligar():
+    """Desligar deixa um retângulo tracejado no lugar.
+
+    Para uma proposta do detector isso é certo — o revisor precisa ver o que o
+    sistema achou e ele recusou. Para um trecho que o próprio usuário
+    adicionou, não: ele não propôs nada, ele mandou tarjar, e clicar é
+    desfazer. Com o tracejado no lugar, a leitura correta é "não saiu".
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    trecho = re.search(
+        r'caixa\.addEventListener\("click".{0,220}', js, re.S
+    )
+    assert trecho, "o clique na tarja sumiu"
+    corpo = trecho.group()
+    assert "removerSpan" in corpo, "clique em tarja manual precisa remover"
+    assert 'origem === "usuario"' in corpo, "a distinção por origem sumiu"
+
+
+def test_sessao_sobrevive_a_recarga():
+    """Um F5 acidental não pode jogar fora a revisão.
+
+    A sessão vive no servidor; o navegador só precisa lembrar qual é. Sem
+    isso, todo o trabalho — tarjas desligadas, trechos apontados à mão —
+    ficava inalcançável enquanto a sessão seguia intacta do outro lado.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert "localStorage" in js
+    assert "restaurarSessao" in js
+    # E some quando o documento é descartado, senão a próxima carga tenta
+    # retomar uma sessão que não existe mais.
+    assert "esquecerSessao" in js
+
+
+def test_so_o_identificador_vai_para_o_navegador():
+    """Nenhum conteúdo de documento pode ir para o armazenamento local.
+
+    O `localStorage` persiste em disco, fora do ciclo de vida da sessão e do
+    saneamento do servidor. Guardar ali um trecho de documento seria uma
+    cópia de dado pessoal que ninguém apaga.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    for m in re.finditer(r"localStorage\.setItem\(([^)]*)\)", js):
+        args = m.group(1)
+        assert "doc_id" in args or "id" in args, (
+            f"localStorage.setItem({args}) guarda algo que nao e o identificador"
+        )
+
+
 def test_nenhuma_caixa_de_dialogo_do_navegador():
     """`confirm`/`alert` destoam da interface e não explicam o que fazem."""
     js = (ESTATICOS / "app.js").read_text(encoding="utf-8")

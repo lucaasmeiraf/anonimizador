@@ -86,6 +86,7 @@ async function enviarArquivo(arquivo) {
     const dados = await r.json();
     if (!r.ok) throw new Error(dados.detail || "falha no envio");
     doc = dados;
+    lembrarSessao(doc.doc_id);
     montarRevisao();
   } catch (e) {
     erro.textContent = e.message;
@@ -113,6 +114,55 @@ fetch("/api/saude")
     }
   })
   .catch(() => {});
+
+/* ------------------------------------------------ sessão entre recargas ---
+ *
+ * A revisão vive no servidor; o navegador só guarda qual é. Sem isto, um F5
+ * acidental jogava fora todo o trabalho de revisão — as tarjas desligadas, os
+ * trechos apontados à mão — enquanto a sessão continuava lá, intacta e
+ * inalcançável.
+ *
+ * Só o identificador é guardado. Nenhum conteúdo de documento passa pelo
+ * armazenamento do navegador.
+ */
+const CHAVE_SESSAO = "anonimizador.doc";
+
+function lembrarSessao(id) {
+  try {
+    localStorage.setItem(CHAVE_SESSAO, id);
+  } catch {
+    /* modo privado, cota cheia: perder a retomada não pode quebrar a tela */
+  }
+}
+
+function esquecerSessao() {
+  try {
+    localStorage.removeItem(CHAVE_SESSAO);
+  } catch {}
+}
+
+async function restaurarSessao() {
+  let id = null;
+  try {
+    id = localStorage.getItem(CHAVE_SESSAO);
+  } catch {
+    return;
+  }
+  if (!id) return;
+
+  try {
+    const r = await fetch(`/api/doc/${id}`);
+    // 404 é o caso normal: a sessão expirou, foi descartada, ou o servidor
+    // reiniciou. Não é erro — é só não haver o que retomar.
+    if (!r.ok) return esquecerSessao();
+    doc = await r.json();
+    montarRevisao();
+  } catch {
+    esquecerSessao();
+  }
+}
+
+restaurarSessao();
 
 // --------------------------------------------------------------- montagem
 function montarRevisao() {
@@ -302,7 +352,19 @@ function redesenhar() {
         `${s.entity} · ${s.sera_tarjado ? "será tarjado" : "NÃO será tarjado"}` +
         porque;
       caixa.dataset.spanId = s.id;
-      caixa.addEventListener("click", () => alternar(s.id, !s.ativo));
+      /* Clique na tarja: o que ele significa depende de quem a criou.
+       *
+       * Proposta do detector -> **desliga**, e o retângulo continua ali,
+       * tracejado. O revisor precisa enxergar o que o sistema achou e ele
+       * recusou; fazer sumir esconderia justamente a informação que torna a
+       * revisão auditável.
+       *
+       * Trecho que o usuário adicionou -> **remove**. Ele não propôs nada,
+       * ele mandou tarjar; clicar é desfazer. Desligar deixava um retângulo
+       * tracejado no lugar, e a leitura correta disso é "não saiu". */
+      caixa.addEventListener("click", () =>
+        s.origem === "usuario" ? removerSpan(s.id) : alternar(s.id, !s.ativo)
+      );
       camada.appendChild(caixa);
     }
   }
@@ -423,6 +485,12 @@ async function enviar(caminho, opcoes) {
   const dados = await r.json();
   if (!r.ok) throw new Error(dados.detail || "falha");
   return dados;
+}
+
+async function removerSpan(spanId) {
+  doc = await enviar(`/span/${spanId}`, { method: "DELETE" });
+  limparResultado();
+  redesenhar();
 }
 
 async function alternar(spanId, ativo, redesenhaDepois = true) {
@@ -656,7 +724,12 @@ function mostrarResultado() {
         <li>${rel.valores_checados} valores conferidos em ${rel.vetores.length} vetores</li>
         <li>nenhum valor sobreviveu no arquivo final</li>
       </ul>
-      <a class="baixar" href="/api/doc/${doc.doc_id}/download">Baixar PDF anonimizado</a>`;
+      <a class="baixar" id="link-baixar" href="/api/doc/${doc.doc_id}/download">Baixar PDF anonimizado</a>`;
+    // O download é uma navegação comum do navegador; o modal vem logo depois,
+    // com folga para o arquivo ter começado a descer.
+    r.querySelector("#link-baixar")?.addEventListener("click", () => {
+      setTimeout(abrirProximo, 1200);
+    });
   } else {
     // Sem link de download. O gate não é cosmético: o arquivo foi apagado no
     // servidor, não existe caminho para baixá-lo.
@@ -728,42 +801,59 @@ function mostrarResultado() {
  * Não é só estética: o diálogo do navegador não permite explicar **o que**
  * está sendo destruído, e aqui a ação apaga o original, a proposta e o PDF
  * gerado, sem volta. Quem confirma precisa saber disso. */
-const modalFundo = $("modal-fundo");
+/* Mecânica compartilhada pelos modais.
+ *
+ * Só a mecânica: cada modal tem a sua marcação e os seus botões. A parte que
+ * vale a pena compartilhar é o comportamento de teclado, que é fácil de errar
+ * e igual em todos — Esc fecha, Tab não escapa para a tela inerte atrás, e o
+ * foco volta para onde estava.
+ */
+let modalAberto = null;
 let focoAnterior = null;
 
-function abrirModal() {
+function abrirModalEl(fundo, focoInicial) {
   focoAnterior = document.activeElement;
-  modalFundo.classList.remove("hidden");
-  // Foco no botão seguro: Enter sem ler não pode destruir a sessão.
-  $("modal-cancelar").focus();
+  modalAberto = fundo;
+  fundo.classList.remove("hidden");
+  focoInicial?.focus();
   document.addEventListener("keydown", teclaNoModal);
 }
 
-function fecharModal() {
-  modalFundo.classList.add("hidden");
+function fecharModalEl(fundo) {
+  fundo.classList.add("hidden");
+  if (modalAberto === fundo) modalAberto = null;
   document.removeEventListener("keydown", teclaNoModal);
   focoAnterior?.focus();
 }
 
 function teclaNoModal(e) {
-  if (e.key === "Escape") return fecharModal();
+  if (!modalAberto) return;
+  if (e.key === "Escape") return fecharModalEl(modalAberto);
   if (e.key !== "Tab") return;
   // Prende o Tab dentro do modal: sair dele com o teclado deixaria o usuário
   // navegando numa tela que está inerte atrás da sobreposição.
-  const foco = [$("modal-cancelar"), $("modal-confirmar")];
+  const foco = [...modalAberto.querySelectorAll("button")];
   const i = foco.indexOf(document.activeElement);
   if (i === -1) return;
   e.preventDefault();
   foco[(i + (e.shiftKey ? foco.length - 1 : 1)) % foco.length].focus();
 }
 
+// Clique na sobreposição cancela; clique dentro do cartão, não.
+function fecharAoClicarFora(fundo) {
+  fundo.addEventListener("click", (e) => {
+    if (e.target === fundo) fecharModalEl(fundo);
+  });
+}
+
+const modalFundo = $("modal-fundo");
+// Foco no botão seguro: Enter sem ler não pode destruir a sessão.
+const abrirModal = () => abrirModalEl(modalFundo, $("modal-cancelar"));
+const fecharModal = () => fecharModalEl(modalFundo);
+
 $("btn-descartar").addEventListener("click", abrirModal);
 $("modal-cancelar").addEventListener("click", fecharModal);
-
-// Clique na sobreposição cancela; clique dentro do cartão, não.
-modalFundo.addEventListener("click", (e) => {
-  if (e.target === modalFundo) fecharModal();
-});
+fecharAoClicarFora(modalFundo);
 
 $("modal-confirmar").addEventListener("click", async () => {
   const btn = $("modal-confirmar");
@@ -788,9 +878,45 @@ $("modal-confirmar").addEventListener("click", async () => {
   }
 });
 
+/* ------------------------------------------------ depois do download -----
+ *
+ * Aparece só quando o PDF já foi liberado e baixado. Nesse ponto, descartar a
+ * sessão não perde trabalho nenhum — o entregável está na máquina do
+ * usuário —, e deixá-la viva mantém o documento original em disco sem motivo.
+ *
+ * "Continuar revisando" existe porque o download pode ter sido um teste: a
+ * pessoa quer conferir o arquivo antes de abrir mão da sessão.
+ */
+const proximoFundo = $("proximo-fundo");
+const abrirProximo = () => abrirModalEl(proximoFundo, $("proximo-novo"));
+fecharAoClicarFora(proximoFundo);
+
+$("proximo-fechar").addEventListener("click", () => fecharModalEl(proximoFundo));
+
+async function encerrarSessao() {
+  const id = doc?.doc_id;
+  fecharModalEl(proximoFundo);
+  if (id) {
+    // Falhar aqui não pode travar a tela; o TTL da sessão recolhe depois.
+    try {
+      await fetch(`/api/doc/${id}`, { method: "DELETE" });
+    } catch {}
+  }
+  voltarAoInicio();
+}
+
+$("proximo-inicio").addEventListener("click", encerrarSessao);
+
+$("proximo-novo").addEventListener("click", async () => {
+  await encerrarSessao();
+  // Abre o seletor direto: o usuário já disse o que quer fazer.
+  $("arquivo").click();
+});
+
 /* Volta à tela inicial sem recarregar a página: o modelo já está carregado no
  * servidor e o recarregamento só adicionaria um piscar. */
 function voltarAoInicio() {
+  esquecerSessao();
   doc = null;
   esconderBalao();
   window.getSelection()?.removeAllRanges();

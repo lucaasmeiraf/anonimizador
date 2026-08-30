@@ -510,7 +510,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 #resultado .estrutural { border-left: 3px solid var(--falha); }
 
 /* -------------------------------------------------------------- modal */
-#modal-fundo {
+/* O segundo modal reusa a aparencia do primeiro; o que muda e o conteudo. */
+#modal-fundo, #proximo-fundo {
   position: fixed;
   inset: 0;
   z-index: 100;
@@ -522,7 +523,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   animation: aparecer .12s ease-out;
 }
 
-#modal {
+#modal, #proximo {
   width: 100%;
   max-width: 440px;
   background: var(--papel);
@@ -532,7 +533,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   animation: subir .15s ease-out;
 }
 
-#modal h3 { margin: 0 0 12px; font-size: 17px; font-weight: 650; }
+#modal h3, #proximo h3 { margin: 0 0 12px; font-size: 17px; font-weight: 650; }
 #modal-corpo { font-size: 13.5px; line-height: 1.55; color: var(--suave); }
 #modal-corpo p { margin: 0 0 8px; }
 #modal-corpo ul { margin: 0 0 10px; padding-left: 20px; }
@@ -565,7 +566,18 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 /* O foco visível importa mais aqui do que em qualquer outro botão: a ação é
    irreversível e o teclado precisa deixar claro onde está. */
-#modal button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+#modal button:focus-visible, #proximo button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+.modal-acoes { flex-wrap: wrap; }
+
+/* Ação sugerida, sem ocupar a largura toda como o `.primario` da lateral. */
+.primario-inline {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+  font-weight: 600;
+}
+.primario-inline:hover { background: #17497f; border-color: #17497f; }
 
 @keyframes aparecer { from { opacity: 0; } }
 @keyframes subir {
@@ -573,7 +585,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #modal-fundo, #modal { animation: none; }
+  #modal-fundo, #modal, #proximo-fundo, #proximo { animation: none; }
 }
 
 .limitacoes summary { cursor: pointer; font-size: 13px; font-weight: 600; }

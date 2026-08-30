@@ -188,6 +188,26 @@
   </div>
 </div>
 
+<!-- Depois do download: o que fazer em seguida. Aparece só quando o arquivo
+     já foi baixado, então descartar a sessão aqui não perde trabalho. -->
+<div id="proximo-fundo" class="hidden">
+  <div id="proximo" role="dialog" aria-modal="true"
+       aria-labelledby="proximo-titulo">
+    <h3 id="proximo-titulo">Download iniciado</h3>
+    <div id="modal-corpo">
+      <p>
+        O PDF anonimizado foi liberado. O documento original e a proposta de
+        tarjas serão apagados do servidor ao sair desta revisão.
+      </p>
+    </div>
+    <div class="modal-acoes">
+      <button id="proximo-fechar" class="secundario">Continuar revisando</button>
+      <button id="proximo-inicio" class="secundario">Voltar ao início</button>
+      <button id="proximo-novo" class="primario-inline">Anonimizar outro</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>
