@@ -141,6 +141,47 @@ def test_todo_id_usado_pelo_js_existe_no_html():
     assert not (ids_js - ids_html), f"ids ausentes no HTML: {ids_js - ids_html}"
 
 
+def test_tamanho_da_fonte_da_camada_de_texto_nao_usa_porcentagem():
+    """O erro de unidade que quebrou a seleção inteira.
+
+    ``font-size: N%`` é percentual da fonte do **elemento pai**, não da altura
+    do container. Escrito assim, ``(100 * 10pt) / 842pt = 1.19%`` virava 1.19%
+    de 14px — **0.17 pixel**. A camada de texto ficava microscópica, e daí:
+
+    * o realce da seleção era invisível, e o usuário selecionava às cegas;
+    * a largura medida era quase zero, o ``scaleX`` de correção calculava um
+      fator gigante e esticava cada palavra por cima da linha inteira, de modo
+      que arrastar o cursor atravessava dezenas de spans sobrepostos.
+
+    Um único erro de unidade produziu dois sintomas que pareciam
+    independentes. O tamanho tem de sair em pixel, calculado da altura
+    renderizada.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    atribuicoes = re.findall(r"style\.fontSize\s*=\s*([^;]+);", js)
+    assert atribuicoes, "a camada de texto deixou de definir fontSize"
+    for a in atribuicoes:
+        assert '"%"' not in a and "'%'" not in a, (
+            f"fontSize em porcentagem ({a.strip()}): e percentual da fonte do "
+            "pai, nao da altura da pagina"
+        )
+        assert '"px"' in a or "'px'" in a, (
+            f"fontSize sem unidade px ({a.strip()}): o tamanho precisa vir da "
+            "altura renderizada"
+        )
+
+
+def test_camada_de_texto_reajusta_quando_a_pagina_muda_de_tamanho():
+    """A altura renderizada só existe depois de a imagem carregar.
+
+    Sem reajuste, o primeiro cálculo acontece com a página ainda sem altura e
+    a camada fica fora de escala para sempre — a seleção deixa de cair sobre
+    as letras que o usuário vê.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert "ResizeObserver" in js
+
+
 def test_nenhuma_caixa_de_dialogo_do_navegador():
     """`confirm`/`alert` destoam da interface e não explicam o que fazem."""
     js = (ESTATICOS / "app.js").read_text(encoding="utf-8")

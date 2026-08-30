@@ -177,10 +177,27 @@ function montarPaginas(container, comTarjas) {
 
 /* Desenha as palavras como texto transparente sobre a imagem.
  *
- * Posição e largura vêm em pontos de PDF e viram porcentagem, como as tarjas.
- * A altura da caixa define o tamanho da fonte; a largura raramente bate com a
- * da fonte do sistema, então um scaleX corrige — sem isso a seleção fica
- * visivelmente deslocada do que a imagem mostra. */
+ * A posição vai em porcentagem — ela é relativa à caixa da página, e
+ * porcentagem resolve isso sozinha em qualquer zoom.
+ *
+ * O **tamanho da fonte não pode** ir em porcentagem, e essa foi a origem de
+ * dois defeitos que pareciam não ter relação:
+ *
+ *   font-size: 1.19%   →  1.19% de 14px (a fonte herdada)  =  0.17px
+ *
+ * `font-size` em `%` é percentual da fonte do **elemento pai**, não da altura
+ * do container. A camada inteira ficava microscópica, e daí:
+ *
+ *   * o realce da seleção tinha 0.17px de altura — invisível, e o usuário
+ *     selecionava sem nenhum retorno visual;
+ *   * a largura medida era quase zero, então o `scaleX` de correção calculava
+ *     um fator gigante e esticava cada palavra por cima da linha inteira.
+ *     Arrastar o cursor atravessava dezenas de spans sobrepostos, e a seleção
+ *     pegava muito mais do que o apontado.
+ *
+ * O tamanho tem de ser calculado em pixels, a partir da altura **renderizada**
+ * da página — que só se conhece depois de a imagem carregar, e muda quando a
+ * janela muda. Daí o `ResizeObserver`. */
 async function carregarTexto(pagina, camada) {
   let dados;
   try {
@@ -195,10 +212,11 @@ async function carregarTexto(pagina, camada) {
   for (const p of dados.palavras) {
     const s = document.createElement("span");
     s.textContent = p.t;
-    const alturaPt = p.y1 - p.y0;
     s.style.left = (100 * p.x0) / pagina.largura + "%";
     s.style.top = (100 * p.y0) / pagina.altura + "%";
-    s.style.fontSize = (100 * alturaPt) / pagina.altura + "%";
+    // Métricas em pontos de PDF; a conversão para pixel acontece no ajuste,
+    // porque depende do tamanho com que a página foi de fato desenhada.
+    s.dataset.alturaPt = p.y1 - p.y0;
     s.dataset.larguraPt = p.x1 - p.x0;
     // Offset desta palavra no texto completo do documento. É a ponte entre o
     // que o navegador selecionou e o que o servidor vai tarjar: somado ao
@@ -208,18 +226,47 @@ async function carregarTexto(pagina, camada) {
   }
   camada.appendChild(frag);
 
-  // O ajuste de largura precisa do texto já no DOM para medir.
-  requestAnimationFrame(() => {
-    const larguraPx = camada.clientWidth;
-    if (!larguraPx) return;
-    for (const s of camada.children) {
-      const alvoPx = (s.dataset.larguraPt / pagina.largura) * larguraPx;
-      const real = s.getBoundingClientRect().width;
-      if (real > 0 && alvoPx > 0) {
-        s.style.transform = `scaleX(${alvoPx / real})`;
-      }
+  const ajustar = () => ajustarCamadaDeTexto(camada, pagina);
+  ajustar();
+
+  // A altura útil só existe depois que a imagem da página carrega, e muda
+  // junto com a janela. Sem reajustar, a camada fica fora de escala e a
+  // seleção volta a não corresponder ao que se vê.
+  const alvo = camada.parentElement;
+  if (window.ResizeObserver && alvo) {
+    new ResizeObserver(ajustar).observe(alvo);
+  } else {
+    window.addEventListener("resize", ajustar);
+  }
+}
+
+/* Converte as métricas de ponto para pixel, com a página já renderizada. */
+function ajustarCamadaDeTexto(camada, pagina) {
+  const larguraPx = camada.clientWidth;
+  const alturaPx = camada.clientHeight;
+  if (!larguraPx || !alturaPx) return;
+
+  const pxPorPontoV = alturaPx / pagina.altura;
+  const pxPorPontoH = larguraPx / pagina.largura;
+
+  for (const s of camada.children) {
+    // Primeiro o tamanho, em pixel de verdade.
+    s.style.transform = "none";
+    s.style.fontSize = Number(s.dataset.alturaPt) * pxPorPontoV + "px";
+  }
+
+  // A medição de largura precisa acontecer depois de todos os tamanhos já
+  // aplicados — lê-la no mesmo laço forçaria um reflow por palavra.
+  for (const s of camada.children) {
+    const alvoPx = Number(s.dataset.larguraPt) * pxPorPontoH;
+    const real = s.getBoundingClientRect().width;
+    // A fonte do sistema quase nunca tem a mesma largura da fonte embutida no
+    // PDF; o scaleX faz a caixa do texto coincidir com o que a imagem mostra,
+    // que é o que faz o realce da seleção cair sobre as letras certas.
+    if (real > 0.5 && alvoPx > 0) {
+      s.style.transform = `scaleX(${alvoPx / real})`;
     }
-  });
+  }
 }
 
 /* Desenha as tarjas a partir do estado do servidor.
