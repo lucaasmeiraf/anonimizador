@@ -305,6 +305,192 @@ def test_termo_curto_demais_e_recusado(cliente, pdf):
     assert r.status_code == 422
 
 
+def test_termo_nao_empilha_sobre_tarja_ativa(cliente, pdf):
+    """O defeito que fazia a tarja parecer indesligável.
+
+    Tarjar `Mariana` num documento onde o detector já marcou
+    `Mariana Aparecida Souza` criava um segundo retângulo por cima do
+    primeiro. Os dois ficavam pretos, o clique acertava só o de cima, e a
+    tarja continuava lá.
+    """
+    doc = _enviar(cliente, pdf)
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/termo", json={"termo": "Mariana"}
+    ).json()
+    assert d["adicionados"] == 0
+    assert not [s for s in d["spans"] if s["origem"] == "usuario"]
+
+
+def test_termo_entra_se_a_tarja_que_cobria_estiver_desligada(cliente, pdf):
+    """A intenção explícita do usuário vale mais que proposta desligada."""
+    doc = _enviar(cliente, pdf)
+    alvo = [s for s in doc["spans"] if s["valor"].startswith("Mariana")][0]
+    cliente.patch(
+        f"/api/doc/{doc['doc_id']}/span", json={"span_id": alvo["id"], "ativo": False}
+    )
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/termo", json={"termo": "Mariana"}
+    ).json()
+    assert d["adicionados"] == 1
+
+
+# --------------------------------------------------------------------------
+# Remoção de trechos adicionados à mão
+# --------------------------------------------------------------------------
+def test_apagar_span_manual(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/termo", json={"termo": "Rua das Flores"}
+    ).json()
+    sid = [s for s in d["spans"] if s["origem"] == "usuario"][0]["id"]
+
+    d = cliente.delete(f"/api/doc/{doc['doc_id']}/span/{sid}").json()
+    assert not [s for s in d["spans"] if s["origem"] == "usuario"]
+
+
+def test_apagar_span_do_detector_e_recusado(cliente, pdf):
+    """Remover uma proposta do detector esconderia que ela existiu.
+
+    Desligar é a operação certa ali: continua visível na tela, com a caixa
+    tracejada, e o revisor enxerga o que o sistema achou e ele recusou.
+    """
+    doc = _enviar(cliente, pdf)
+    sid = doc["spans"][0]["id"]
+    r = cliente.delete(f"/api/doc/{doc['doc_id']}/span/{sid}")
+    assert r.status_code == 409
+
+
+def test_apagar_todos_os_manuais(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    cliente.post(f"/api/doc/{doc['doc_id']}/termo", json={"termo": "Rua das Flores"})
+    cliente.post(f"/api/doc/{doc['doc_id']}/termo", json={"termo": "certidao"})
+
+    d = cliente.delete(f"/api/doc/{doc['doc_id']}/manuais").json()
+    assert not [s for s in d["spans"] if s["origem"] == "usuario"]
+
+
+def test_apagar_manual_apos_aprovar_invalida_download(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/termo", json={"termo": "Rua das Flores"}
+    ).json()
+    sid = [s for s in d["spans"] if s["origem"] == "usuario"][0]["id"]
+    cliente.post(f"/api/doc/{doc['doc_id']}/aprovar")
+
+    cliente.delete(f"/api/doc/{doc['doc_id']}/span/{sid}")
+    assert cliente.get(f"/api/doc/{doc['doc_id']}/download").status_code == 409
+
+
+# --------------------------------------------------------------------------
+# Camada de texto selecionável
+# --------------------------------------------------------------------------
+def test_texto_da_pagina_devolve_palavras_com_caixa(cliente, pdf):
+    """Sem esta rota a página é só imagem, e imagem não se copia.
+
+    O usuário precisa selecionar o trecho no documento e colar no campo; é o
+    fluxo mais natural para apontar o que faltou.
+    """
+    doc = _enviar(cliente, pdf)
+    d = cliente.get(f"/api/doc/{doc['doc_id']}/texto/0").json()
+
+    assert d["pagina"] == 0
+    assert len(d["palavras"]) > 10
+    p = d["palavras"][0]
+    assert set(p) >= {"t", "x0", "y0", "x1", "y1"}
+    assert p["x1"] > p["x0"] and p["y1"] > p["y0"]
+    # O texto tem de ser utilizável: as palavras do documento estão lá.
+    todas = " ".join(w["t"] for w in d["palavras"])
+    assert "Mariana" in todas
+
+
+def test_texto_de_pagina_inexistente_da_404(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    assert cliente.get(f"/api/doc/{doc['doc_id']}/texto/99").status_code == 404
+
+
+# --------------------------------------------------------------------------
+# O relatório de falha precisa ser acionável
+# --------------------------------------------------------------------------
+def test_relatorio_de_sucesso_traz_ocorrencias_vazias(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    d = cliente.post(f"/api/doc/{doc['doc_id']}/aprovar").json()
+    assert d["relatorio"]["ocorrencias"] == []
+
+
+def test_relatorio_de_falha_diz_o_que_sobreviveu_e_onde(cliente, tmp_pdf):
+    """"Reprovou" sozinho é um beco sem saída.
+
+    Aqui o mesmo nome aparece duas vezes e o dublê só detecta a primeira, o
+    que reproduz o caso real: outra ocorrência do mesmo valor que o detector
+    não marcou. A tela precisa saber que é isso, para oferecer o conserto.
+    """
+    from anonimizador.spans import Span
+
+    class SoAPrimeira:
+        def analyze(self, texto):
+            pos = texto.find("Mariana Aparecida Souza")
+            return [Span(pos, pos + 23, "PERSON", 0.99)] if pos != -1 else []
+
+    app_mod._pipeline = SoAPrimeira()
+    caminho = tmp_pdf(
+        [
+            "Interessada: Mariana Aparecida Souza.",
+            "Reiteramos que Mariana Aparecida Souza compareceu.",
+        ],
+        nome="dup.pdf",
+    )
+    with open(caminho, "rb") as fh:
+        doc = cliente.post(
+            "/api/doc", files={"arquivo": ("dup.pdf", fh, "application/pdf")}
+        ).json()
+
+    d = cliente.post(f"/api/doc/{doc['doc_id']}/aprovar").json()
+    rel = d["relatorio"]
+
+    assert rel["verificacao_ok"] is False
+    assert d["pode_baixar"] is False
+    assert rel["ocorrencias"], "reprovou sem dizer o que sobreviveu"
+
+    o = rel["ocorrencias"][0]
+    assert o["valor"] == "Mariana Aparecida Souza"
+    assert o["visivel_no_texto"] is True
+    assert o["ocorrencias_no_texto"] >= 1
+
+
+def test_conserto_oferecido_pela_tela_de_falha_funciona(cliente, tmp_pdf):
+    """O caminho completo: reprovou -> tarjar todas -> aprova."""
+    from anonimizador.spans import Span
+
+    class SoAPrimeira:
+        def analyze(self, texto):
+            pos = texto.find("Mariana Aparecida Souza")
+            return [Span(pos, pos + 23, "PERSON", 0.99)] if pos != -1 else []
+
+    app_mod._pipeline = SoAPrimeira()
+    caminho = tmp_pdf(
+        [
+            "Interessada: Mariana Aparecida Souza.",
+            "Reiteramos que Mariana Aparecida Souza compareceu.",
+        ],
+        nome="dup2.pdf",
+    )
+    with open(caminho, "rb") as fh:
+        doc = cliente.post(
+            "/api/doc", files={"arquivo": ("dup2.pdf", fh, "application/pdf")}
+        ).json()
+
+    rel = cliente.post(f"/api/doc/{doc['doc_id']}/aprovar").json()["relatorio"]
+    valor = rel["ocorrencias"][0]["valor"]
+
+    # É exatamente o que o botão "Tarjar todas as ocorrências" dispara.
+    cliente.post(f"/api/doc/{doc['doc_id']}/termo", json={"termo": valor})
+    d = cliente.post(f"/api/doc/{doc['doc_id']}/aprovar").json()
+
+    assert d["relatorio"]["verificacao_ok"] is True
+    assert d["pode_baixar"] is True
+    assert cliente.get(f"/api/doc/{doc['doc_id']}/download").status_code == 200
+
+
 # --------------------------------------------------------------------------
 # Ciclo de vida
 # --------------------------------------------------------------------------

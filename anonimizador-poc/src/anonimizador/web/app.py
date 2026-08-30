@@ -167,6 +167,66 @@ def alternar_span(corpo: AlternarSpan, sessao: Sessao = Depends(pegar_sessao)) -
     return sessao.to_dict()
 
 
+@app.delete("/api/doc/{doc_id}/span/{span_id}")
+def remover_span(span_id: str, sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    """Apaga um trecho que o usuário adicionou. Só os dele."""
+    try:
+        sessao.remover_span(span_id)
+    except KeyError as exc:
+        raise HTTPException(404, "span inexistente") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return sessao.to_dict()
+
+
+@app.delete("/api/doc/{doc_id}/manuais")
+def remover_manuais(sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    n = sessao.remover_manuais()
+    resposta = sessao.to_dict()
+    resposta["removidos"] = n
+    return resposta
+
+
+@app.get("/api/doc/{doc_id}/texto/{numero}")
+def texto_da_pagina(numero: int, sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    """Palavras da página com suas caixas, para a camada de seleção.
+
+    A página é servida como imagem, então não há texto selecionável — o
+    usuário não consegue copiar um trecho para apontar o que faltou, que é
+    justamente o fluxo mais natural. Esta rota devolve as palavras e onde elas
+    estão; o front-end desenha texto transparente por cima da imagem e o
+    navegador cuida de seleção e cópia.
+
+    Vem do PDF **original**: é o que está sendo revisado. Serve à mesma sessão
+    que já entregou a imagem da página, então não expõe nada novo.
+    """
+    if not 0 <= numero < len(sessao.paginas):
+        raise HTTPException(404, "página inexistente")
+
+    doc = fitz.open(str(sessao.original))
+    try:
+        # `get_text("words")` devolve (x0, y0, x1, y1, palavra, bloco, linha, n)
+        # já na ordem de leitura que o PyMuPDF extrai.
+        palavras = doc.load_page(numero).get_text("words")
+    finally:
+        doc.close()
+
+    return {
+        "pagina": numero,
+        "palavras": [
+            {
+                "t": p[4],
+                "x0": p[0],
+                "y0": p[1],
+                "x1": p[2],
+                "y1": p[3],
+                "linha": (p[5], p[6]),
+            }
+            for p in palavras
+        ],
+    }
+
+
 class Termo(BaseModel):
     termo: str = Field(min_length=2, max_length=200)
 

@@ -69,6 +69,13 @@ function montarPaginas(container, comTarjas) {
     img.loading = "lazy";
     div.appendChild(img);
 
+    // Camada de texto selecionável, nos dois painéis. É o que permite o
+    // Ctrl+C do usuário — a página é uma imagem e imagem não tem texto.
+    const texto = document.createElement("div");
+    texto.className = "camada-texto";
+    div.appendChild(texto);
+    carregarTexto(p, texto);
+
     if (comTarjas) {
       const camada = document.createElement("div");
       camada.className = "camada-tarjas";
@@ -86,6 +93,49 @@ function montarPaginas(container, comTarjas) {
     embrulho.appendChild(rotulo);
     container.appendChild(embrulho);
   }
+}
+
+/* Desenha as palavras como texto transparente sobre a imagem.
+ *
+ * Posição e largura vêm em pontos de PDF e viram porcentagem, como as tarjas.
+ * A altura da caixa define o tamanho da fonte; a largura raramente bate com a
+ * da fonte do sistema, então um scaleX corrige — sem isso a seleção fica
+ * visivelmente deslocada do que a imagem mostra. */
+async function carregarTexto(pagina, camada) {
+  let dados;
+  try {
+    const r = await fetch(`/api/doc/${doc.doc_id}/texto/${pagina.numero}`);
+    if (!r.ok) return;
+    dados = await r.json();
+  } catch {
+    return; // sem camada de texto a tela continua utilizável
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const p of dados.palavras) {
+    const s = document.createElement("span");
+    s.textContent = p.t;
+    const alturaPt = p.y1 - p.y0;
+    s.style.left = (100 * p.x0) / pagina.largura + "%";
+    s.style.top = (100 * p.y0) / pagina.altura + "%";
+    s.style.fontSize = (100 * alturaPt) / pagina.altura + "%";
+    s.dataset.larguraPt = p.x1 - p.x0;
+    frag.appendChild(s);
+  }
+  camada.appendChild(frag);
+
+  // O ajuste de largura precisa do texto já no DOM para medir.
+  requestAnimationFrame(() => {
+    const larguraPx = camada.clientWidth;
+    if (!larguraPx) return;
+    for (const s of camada.children) {
+      const alvoPx = (s.dataset.larguraPt / pagina.largura) * larguraPx;
+      const real = s.getBoundingClientRect().width;
+      if (real > 0 && alvoPx > 0) {
+        s.style.transform = `scaleX(${alvoPx / real})`;
+      }
+    }
+  });
 }
 
 /* Desenha as tarjas a partir do estado do servidor.
@@ -117,7 +167,61 @@ function redesenhar() {
     }
   }
   montarInventario();
+  montarListaManuais();
   atualizarBotaoAprovar();
+}
+
+/* Lista dos trechos que o usuário adicionou, com desligar e apagar.
+ *
+ * Desligar não bastava: um termo digitado errado espalha retângulos pelo
+ * documento e obriga a caçar cada um na página para clicar. Aqui eles estão
+ * todos juntos, e apagar remove de vez. */
+function montarListaManuais() {
+  const caixa = $("manuais");
+  const ul = $("lista-manuais");
+  const manuais = doc.spans.filter((s) => s.origem === "usuario");
+
+  ul.innerHTML = "";
+  caixa.classList.toggle("hidden", manuais.length === 0);
+  if (!manuais.length) return;
+
+  // Um termo vira vários spans (uma por ocorrência); agrupa por texto.
+  const porValor = new Map();
+  for (const s of manuais) {
+    if (!porValor.has(s.valor)) porValor.set(s.valor, []);
+    porValor.get(s.valor).push(s);
+  }
+
+  for (const [valor, spans] of porValor) {
+    const ligados = spans.filter((s) => s.ativo).length;
+    const li = document.createElement("li");
+
+    const txt = document.createElement("span");
+    txt.className = "txt" + (ligados ? "" : " off");
+    txt.textContent = spans.length > 1 ? `${valor} (${spans.length}×)` : valor;
+    txt.title = valor;
+
+    const alt = document.createElement("button");
+    alt.textContent = ligados ? "desligar" : "ligar";
+    alt.addEventListener("click", async () => {
+      for (const s of spans) await alternar(s.id, !ligados, false);
+      redesenhar();
+    });
+
+    const del = document.createElement("button");
+    del.textContent = "apagar";
+    del.title = "remove estes trechos da proposta";
+    del.addEventListener("click", async () => {
+      for (const s of spans) {
+        doc = await enviar(`/span/${s.id}`, { method: "DELETE" });
+      }
+      limparResultado();
+      redesenhar();
+    });
+
+    li.append(txt, alt, del);
+    ul.appendChild(li);
+  }
 }
 
 function montarInventario() {
@@ -170,14 +274,14 @@ async function enviar(caminho, opcoes) {
   return dados;
 }
 
-async function alternar(spanId, ativo) {
+async function alternar(spanId, ativo, redesenhaDepois = true) {
   doc = await enviar("/span", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ span_id: spanId, ativo }),
   });
   limparResultado();
-  redesenhar();
+  if (redesenhaDepois) redesenhar();
 }
 
 async function alternarEntidade(entidade, ligar) {
@@ -195,13 +299,44 @@ async function alternarEntidade(entidade, ligar) {
   redesenhar();
 }
 
-$("btn-termo").addEventListener("click", adicionarTermo);
+$("btn-termo").addEventListener("click", () => adicionarTermo());
 $("termo").addEventListener("keydown", (e) => {
   if (e.key === "Enter") adicionarTermo();
 });
 
-async function adicionarTermo() {
-  const termo = $("termo").value.trim();
+/* Seleção no documento vira termo com um clique.
+ *
+ * O Ctrl+C do navegador continua funcionando — a camada de texto é texto de
+ * verdade. Este botão só evita a viagem até o campo para colar. */
+$("btn-selecao").addEventListener("click", () => {
+  const sel = selecaoAtual();
+  if (sel) adicionarTermo(sel);
+});
+
+function selecaoAtual() {
+  const s = window.getSelection();
+  if (!s || s.isCollapsed) return "";
+  // Só interessa seleção feita dentro do documento, não na lateral.
+  const dentro =
+    s.anchorNode &&
+    s.anchorNode.parentElement &&
+    s.anchorNode.parentElement.closest(".camada-texto");
+  const txt = s.toString().replace(/\s+/g, " ").trim();
+  return dentro && txt.length >= 2 ? txt : "";
+}
+
+document.addEventListener("selectionchange", () => {
+  const sel = selecaoAtual();
+  const btn = $("btn-selecao");
+  btn.classList.toggle("hidden", !sel);
+  if (sel) {
+    const curto = sel.length > 40 ? sel.slice(0, 40) + "…" : sel;
+    btn.textContent = `Tarjar "${curto}"`;
+  }
+});
+
+async function adicionarTermo(valor) {
+  const termo = (valor !== undefined ? valor : $("termo").value).trim();
   const aviso = $("aviso-termo");
   if (termo.length < 2) return;
 
@@ -269,16 +404,64 @@ function mostrarResultado() {
   } else {
     // Sem link de download. O gate não é cosmético: o arquivo foi apagado no
     // servidor, não existe caminho para baixá-lo.
-    r.innerHTML = `
-      <div class="cabeca">Verificação REPROVOU — arquivo não liberado</div>
+    //
+    // Mas "reprovou" sozinho é um beco sem saída. Cada ocorrência vira um
+    // cartão que diz *o que* sobreviveu, *onde*, e — quando o conserto está
+    // ao alcance do usuário — oferece o botão que o faz.
+    const ocorrencias = rel.ocorrencias || [];
+    const acionaveis = ocorrencias.filter((o) => o.visivel_no_texto);
+
+    let corpo = `
+      <div class="cabeca">Verificação reprovou — arquivo não liberado</div>
       <ul>
-        <li>${rel.total_vazamentos} ocorrência(s) sobreviveram</li>
+        <li>${rel.total_vazamentos} ocorrência(s) sobreviveram ao saneamento</li>
         <li>vetores afetados: ${escapar(rel.vazamentos.join(", "))}</li>
-      </ul>
-      <p class="aviso">
-        O PDF redigido foi descartado no servidor. Ajuste as tarjas e aprove de
-        novo.
+      </ul>`;
+
+    if (acionaveis.length) {
+      corpo += `<p class="aviso">
+        Estes trechos ainda aparecem no texto do documento — quase sempre é
+        outra ocorrência do mesmo valor que o detector não marcou.
       </p>`;
+    }
+
+    r.innerHTML = corpo;
+
+    for (const o of ocorrencias) {
+      const card = document.createElement("div");
+      card.className = "ocorrencia" + (o.visivel_no_texto ? "" : " estrutural");
+
+      const quem = document.createElement("div");
+      quem.className = "quem";
+      quem.textContent = o.valor;
+
+      const onde = document.createElement("div");
+      onde.className = "onde";
+      onde.textContent = o.visivel_no_texto
+        ? `${o.ocorrencias_no_texto} ocorrência(s) legíveis no texto`
+        : `só na estrutura do PDF${o.objeto ? " — " + o.objeto : ""} ` +
+          `(${o.vetores.join(", ")})`;
+
+      card.append(quem, onde);
+
+      if (o.visivel_no_texto) {
+        const b = document.createElement("button");
+        b.textContent = "Tarjar todas as ocorrências";
+        b.addEventListener("click", () => adicionarTermo(o.valor));
+        card.appendChild(b);
+      }
+      r.appendChild(card);
+    }
+
+    if (ocorrencias.length && !acionaveis.length) {
+      const p = document.createElement("p");
+      p.className = "aviso";
+      p.textContent =
+        "Nenhuma destas sai por extração de texto — o valor sobrevive num " +
+        "objeto interno do PDF. Isso é defeito do redator, não da sua " +
+        "revisão; reporte o tipo de objeto acima.";
+      r.appendChild(p);
+    }
   }
   r.classList.remove("hidden");
 }

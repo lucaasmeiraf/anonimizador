@@ -55,14 +55,21 @@
     <div class="bloco">
       <h3>Faltou alguma coisa?</h3>
       <p class="ajuda">
-        Digite o trecho exato que não foi tarjado. Todas as ocorrências
-        entram.
+        Selecione o trecho no documento e copie (Ctrl+C), ou digite. Todas as
+        ocorrências entram.
       </p>
       <div class="linha">
         <input type="text" id="termo" placeholder="ex.: Maria Fernanda da Mata">
         <button id="btn-termo">Tarjar</button>
       </div>
+      <button id="btn-selecao" class="secundario largo hidden">
+        Tarjar o trecho selecionado
+      </button>
       <p id="aviso-termo" class="aviso hidden"></p>
+      <div id="manuais" class="hidden">
+        <div class="rotulo-lista">Trechos que você adicionou</div>
+        <ul id="lista-manuais"></ul>
+      </div>
     </div>
 
     <div class="bloco" id="bloco-aprovar">

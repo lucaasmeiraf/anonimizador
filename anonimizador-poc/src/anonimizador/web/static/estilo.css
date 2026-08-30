@@ -110,8 +110,44 @@ header h1 { font-size: 16px; margin: 0; font-weight: 600; }
 .tarja.desligada { background: transparent; border: 1.5px dashed #b03a35; }
 .tarja.manual { background: #123a6b; }
 
+/* Camada de texto selecionável, por cima da imagem da página.
+   O texto é transparente: a imagem é que o usuário vê. O que esta camada
+   entrega é seleção e Ctrl+C nativos do navegador, que uma imagem não tem. */
+.camada-texto {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  /* Fica abaixo das tarjas para que o clique na tarja continue funcionando. */
+  z-index: 1;
+}
+
+.camada-texto span {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  transform-origin: 0 0;
+  cursor: text;
+}
+
+.camada-texto span::selection { background: rgba(31, 95, 168, .35); }
+
+.camada-tarjas { z-index: 2; }
+
 /* -------------------------------------------------------------- lateral */
-#lateral { overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+/* `sticky` para o botão de aprovar e o inventário acompanharem a rolagem —
+   num documento longo eles saíam da tela e o revisor tinha de voltar ao topo
+   a cada correção. */
+#lateral {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100vh - 89px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
 .bloco {
   background: var(--papel);
@@ -189,6 +225,58 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   text-decoration: none;
   font-weight: 600;
 }
+
+.largo { width: 100%; margin-top: 6px; }
+
+.rotulo-lista {
+  font-size: 12px;
+  color: var(--suave);
+  margin: 12px 0 6px;
+  border-top: 1px solid #f0f0ec;
+  padding-top: 10px;
+}
+
+#lista-manuais { list-style: none; margin: 0; padding: 0; }
+
+#lista-manuais li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+#lista-manuais .txt {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}
+
+#lista-manuais .txt.off { text-decoration: line-through; color: var(--suave); }
+
+#lista-manuais button {
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Resultado de verificação reprovada, com ação. */
+#resultado .ocorrencia {
+  border: 1px solid var(--borda);
+  border-radius: 5px;
+  padding: 8px;
+  margin: 8px 0;
+}
+#resultado .ocorrencia .quem {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+#resultado .ocorrencia .onde { font-size: 12px; color: var(--suave); margin-top: 3px; }
+#resultado .ocorrencia button { width: 100%; margin-top: 6px; }
+#resultado .estrutural { border-left: 3px solid var(--falha); }
 
 .limitacoes summary { cursor: pointer; font-size: 13px; font-weight: 600; }
 .limitacoes ul { margin: 10px 0 0; padding-left: 18px; color: var(--suave); font-size: 12px; }
