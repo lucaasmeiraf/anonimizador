@@ -279,10 +279,24 @@ header {
 }
 
 /* O realce da seleção é o **único** retorno visual que o usuário tem: o texto
-   é transparente, então sem isto ele seleciona às cegas. Opaco o bastante
-   para se ver sobre a imagem da página. */
-.camada-texto span::selection { background: rgba(31, 95, 168, .38); }
-.camada-texto span::-moz-selection { background: rgba(31, 95, 168, .38); }
+   é transparente, então sem isto ele seleciona às cegas.
+
+   Precisa ser `background-color`, não o atalho `background`. `::selection`
+   aceita um conjunto pequeno e fixo de propriedades, e o atalho fica fora
+   dele — a regra era simplesmente ignorada, e a seleção acontecia sem
+   aparecer.
+
+   `color` explícito porque alguns navegadores forçam a cor do texto
+   selecionado; sem isto os caracteres reapareceriam por cima da imagem,
+   desalinhados dela. */
+.camada-texto ::selection {
+  background-color: rgba(31, 95, 168, .40);
+  color: transparent;
+}
+.camada-texto ::-moz-selection {
+  background-color: rgba(31, 95, 168, .40);
+  color: transparent;
+}
 
 .camada-tarjas { z-index: 2; }
 

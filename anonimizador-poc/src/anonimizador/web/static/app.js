@@ -200,6 +200,10 @@ async function carregarTexto(pagina, camada) {
     s.style.top = (100 * p.y0) / pagina.altura + "%";
     s.style.fontSize = (100 * alturaPt) / pagina.altura + "%";
     s.dataset.larguraPt = p.x1 - p.x0;
+    // Offset desta palavra no texto completo do documento. É a ponte entre o
+    // que o navegador selecionou e o que o servidor vai tarjar: somado ao
+    // deslocamento dentro do nó de texto, dá o caractere exato.
+    s.dataset.i = p.i;
     frag.appendChild(s);
   }
   camada.appendChild(frag);
@@ -414,6 +418,15 @@ $("termo").addEventListener("keydown", (e) => {
  *
  * A reconstrução correta é percorrer os spans que a seleção toca, na ordem
  * do DOM (que é a ordem de leitura da extração), e juntá-los com espaço. */
+/* Converte a seleção do navegador num intervalo de caracteres do documento.
+ *
+ * Cada <span> é uma palavra e carrega, em `data-i`, o offset dela no texto
+ * completo. O navegador informa em que caractere *dentro* do nó de texto a
+ * seleção começou e terminou. A soma dos dois dá o offset exato — inclusive
+ * quando o usuário seleciona no meio de uma palavra.
+ *
+ * Devolve também o texto, usado só para exibir no balão. Quem manda no que
+ * será tarjado são os offsets. */
 function palavrasSelecionadas() {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
@@ -433,8 +446,32 @@ function palavrasSelecionadas() {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
+  if (texto.length < 1) return null;
 
-  return texto.length >= 2 ? { texto, range } : null;
+  // Offsets exatos das pontas.
+  const primeiro = dentro[0];
+  const ultimo = dentro[dentro.length - 1];
+  const spanDe = (no) => (no.nodeType === 1 ? no : no.parentElement);
+
+  let inicio = Number(primeiro.dataset.i);
+  let fim = Number(ultimo.dataset.i) + ultimo.textContent.length;
+
+  // A ponta só desloca quando ela cai *dentro* de uma palavra; se a seleção
+  // começou no espaço entre palavras, o offset da palavra inteira já está
+  // certo.
+  const spanIni = spanDe(range.startContainer);
+  if (spanIni === primeiro && range.startContainer.nodeType === 3) {
+    inicio = Number(primeiro.dataset.i) + range.startOffset;
+  }
+  const spanFim = spanDe(range.endContainer);
+  if (spanFim === ultimo && range.endContainer.nodeType === 3) {
+    fim = Number(ultimo.dataset.i) + range.endOffset;
+  }
+
+  if (!Number.isFinite(inicio) || !Number.isFinite(fim) || fim <= inicio) {
+    return null;
+  }
+  return { texto, range, inicio, fim };
 }
 
 const balao = $("balao");
@@ -465,7 +502,9 @@ document.addEventListener("mouseup", () => {
   setTimeout(() => {
     const sel = palavrasSelecionadas();
     if (!sel) return esconderBalao();
-    balao.dataset.termo = sel.texto;
+    balao.dataset.inicio = sel.inicio;
+    balao.dataset.fim = sel.fim;
+    balao.dataset.texto = sel.texto;
     $("balao-texto").textContent =
       sel.texto.length > 32 ? sel.texto.slice(0, 32) + "…" : sel.texto;
     posicionarBalao(sel.range);
@@ -477,10 +516,32 @@ window.addEventListener("scroll", esconderBalao, true);
 
 $("balao-tarjar").addEventListener("mousedown", (e) => e.preventDefault());
 $("balao-tarjar").addEventListener("click", async () => {
-  const termo = balao.dataset.termo;
+  const inicio = Number(balao.dataset.inicio);
+  const fim = Number(balao.dataset.fim);
+  const textoSel = balao.dataset.texto || "";
   esconderBalao();
   window.getSelection()?.removeAllRanges();
-  if (termo) await adicionarTermo(termo);
+  if (!Number.isFinite(inicio) || !Number.isFinite(fim)) return;
+
+  const aviso = $("aviso-termo");
+  try {
+    // Intervalo, não termo: tarja só o que foi selecionado. Buscar o texto no
+    // documento tarjaria todas as ocorrências, que não é o que selecionar
+    // significa.
+    doc = await enviar("/intervalo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // O texto vai junto para o servidor poder conferir que os offsets
+      // apontam para o mesmo trecho que apareceu na tela.
+      body: JSON.stringify({ inicio, fim, texto: textoSel }),
+    });
+    aviso.classList.add("hidden");
+    limparResultado();
+    redesenhar();
+  } catch (e) {
+    aviso.textContent = e.message;
+    aviso.classList.remove("hidden");
+  }
 });
 
 async function adicionarTermo(valor) {

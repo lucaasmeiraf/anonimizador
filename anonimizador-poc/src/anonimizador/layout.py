@@ -94,6 +94,67 @@ class TextMap:
             saida.append((pagina, fitz.Rect(x0, y0, x1, y1)))
         return saida
 
+    def palavras_da_pagina(self, pagina: int) -> list[dict]:
+        """Palavras de uma página, **com o offset delas no texto completo**.
+
+        Existe para a camada de texto selecionável da interface, e o offset é
+        a razão de ser: com ele, uma seleção feita no navegador vira um
+        intervalo de caracteres exato neste mesmo ``text`` — o mesmo índice
+        que ``rects_for`` e que os spans de detecção usam.
+
+        A alternativa seria ``page.get_text("words")`` do PyMuPDF, que é mais
+        curta e devolve as palavras numa numeração própria, sem relação com
+        estes offsets. Aí seria preciso reconciliar as duas por busca textual,
+        e a reconciliação erra exatamente onde mais importa: em documento com
+        palavra repetida, que é o caso de um formulário.
+
+        Uma palavra é uma sequência máxima de caracteres não-brancos que têm
+        caixa. Os separadores sintéticos inseridos por ``build_text_map`` (a
+        quebra de linha entre blocos, o espaço implícito entre spans) não têm
+        caixa e por isso encerram a palavra naturalmente — que é o
+        comportamento certo: eles não existem na página.
+        """
+        if not 0 <= pagina < len(self.page_offsets):
+            return []
+
+        inicio_pagina, fim_pagina = self.page_offsets[pagina]
+        palavras: list[dict] = []
+        atual: list[int] = []
+
+        def fechar() -> None:
+            if not atual:
+                return
+            caixas = [self._boxes[i] for i in atual]
+            palavras.append(
+                {
+                    "t": "".join(self.text[i] for i in atual),
+                    # Offset no texto completo — a ponte entre a seleção do
+                    # navegador e a redação.
+                    "i": atual[0],
+                    "x0": min(c[0] for c in caixas),
+                    "y0": min(c[1] for c in caixas),
+                    "x1": max(c[2] for c in caixas),
+                    "y1": max(c[3] for c in caixas),
+                }
+            )
+            atual.clear()
+
+        for i in range(inicio_pagina, min(fim_pagina, len(self.text))):
+            caixa = self._boxes[i]
+            if caixa is None or self.text[i].isspace():
+                fechar()
+                continue
+            # Quebra de linha visual sem caractere de espaço entre elas:
+            # sem isto, duas linhas viram uma "palavra" com caixa gigante.
+            if atual:
+                anterior = self._boxes[atual[-1]]
+                if abs(caixa[1] - anterior[1]) > _TOLERANCIA_LINHA:
+                    fechar()
+            atual.append(i)
+        fechar()
+
+        return palavras
+
     # -- construção --------------------------------------------------------
     def _append(self, ch: str, box, pagina: int) -> None:
         self.text += ch

@@ -203,29 +203,38 @@ def texto_da_pagina(numero: int, sessao: Sessao = Depends(pegar_sessao)) -> dict
     """
     if not 0 <= numero < len(sessao.paginas):
         raise HTTPException(404, "página inexistente")
+    # Vem do `TextMap` da sessão, não de `get_text("words")`: cada palavra
+    # traz o offset dela no texto completo, e é isso que permite converter
+    # uma seleção do navegador em um intervalo exato de caracteres.
+    return {"pagina": numero, "palavras": sessao.tm.palavras_da_pagina(numero)}
 
-    doc = fitz.open(str(sessao.original))
+
+class Intervalo(BaseModel):
+    inicio: int = Field(ge=0)
+    fim: int = Field(ge=1)
+    # O texto que o usuário viu selecionado. Não é o que define a tarja — os
+    # offsets definem —, é o que permite ao servidor conferir que eles apontam
+    # para o mesmo lugar. Ver `Sessao._conferir_intervalo`.
+    texto: str = Field(default="", max_length=4000)
+
+
+@app.post("/api/doc/{doc_id}/intervalo")
+def tarjar_intervalo(
+    corpo: Intervalo, sessao: Sessao = Depends(pegar_sessao)
+) -> dict:
+    """Tarja exatamente o trecho selecionado — só ele.
+
+    Diferente de `/termo`, que cobre todas as ocorrências: selecionar é
+    apontar *esta*, digitar é descrever um valor.
+    """
     try:
-        # `get_text("words")` devolve (x0, y0, x1, y1, palavra, bloco, linha, n)
-        # já na ordem de leitura que o PyMuPDF extrai.
-        palavras = doc.load_page(numero).get_text("words")
-    finally:
-        doc.close()
-
-    return {
-        "pagina": numero,
-        "palavras": [
-            {
-                "t": p[4],
-                "x0": p[0],
-                "y0": p[1],
-                "x1": p[2],
-                "y1": p[3],
-                "linha": (p[5], p[6]),
-            }
-            for p in palavras
-        ],
-    }
+        criado = sessao.adicionar_intervalo(corpo.inicio, corpo.fim, corpo.texto)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    resposta = sessao.to_dict()
+    resposta["adicionados"] = 1
+    resposta["span_id"] = criado.id
+    return resposta
 
 
 class Termo(BaseModel):

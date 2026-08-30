@@ -482,6 +482,189 @@ def test_texto_de_pagina_inexistente_da_404(cliente, pdf):
     assert cliente.get(f"/api/doc/{doc['doc_id']}/texto/99").status_code == 404
 
 
+def test_palavras_trazem_offset_no_texto_do_documento(cliente, pdf):
+    """O offset é o que liga a seleção do navegador à redação.
+
+    Sem ele, a única forma de agir sobre uma seleção seria procurar o texto
+    dela no documento — e isso tarja todas as ocorrências, não a que foi
+    selecionada.
+    """
+    doc = _enviar(cliente, pdf)
+    d = cliente.get(f"/api/doc/{doc['doc_id']}/texto/0").json()
+
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    for p in d["palavras"]:
+        assert "i" in p
+        # A promessa que o front-end usa: o offset aponta para esta palavra.
+        assert sessao.tm.text[p["i"] : p["i"] + len(p["t"])] == p["t"]
+
+
+def test_palavras_nao_se_sobrepoem(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    ps = cliente.get(f"/api/doc/{doc['doc_id']}/texto/0").json()["palavras"]
+    for a, b in zip(ps, ps[1:]):
+        assert a["i"] + len(a["t"]) <= b["i"]
+
+
+# --------------------------------------------------------------------------
+# Tarjar por intervalo — a seleção com o mouse
+# --------------------------------------------------------------------------
+def _offsets_de(cliente, doc_id, palavra):
+    ps = cliente.get(f"/api/doc/{doc_id}/texto/0").json()["palavras"]
+    p = next(x for x in ps if x["t"] == palavra)
+    return p["i"], p["i"] + len(p["t"])
+
+
+# Os testes abaixo agem sobre "Flores", que o dublê **não** detecta. Usar um
+# trecho já tarjado esbarraria na regra anti-empilhamento — corretamente, mas
+# mediria outra coisa.
+def test_intervalo_tarja_so_a_ocorrencia_selecionada(cliente, tmp_pdf):
+    """A diferença entre selecionar e digitar.
+
+    Selecionar é apontar *esta* ocorrência; digitar é descrever um valor.
+    Mandar a seleção para a busca textual — como fazíamos — tarjava o
+    documento inteiro a partir de um clique numa cláusula.
+    """
+    caminho = tmp_pdf(
+        [
+            "Referencia: Protocolo Alfa Beta arquivado.",
+            "Novamente o Protocolo Alfa Beta na segunda via.",
+        ],
+        nome="repetido.pdf",
+    )
+    with open(caminho, "rb") as fh:
+        doc = cliente.post(
+            "/api/doc", files={"arquivo": ("repetido.pdf", fh, "application/pdf")}
+        ).json()
+
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    alvo = "Protocolo Alfa Beta"
+    assert sessao.tm.text.count(alvo) == 2, "o corpo do teste precisa repetir"
+
+    inicio = sessao.tm.text.find(alvo)
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/intervalo",
+        json={"inicio": inicio, "fim": inicio + len(alvo), "texto": alvo},
+    ).json()
+
+    manuais = [s for s in d["spans"] if s["origem"] == "usuario"]
+    assert len(manuais) == 1, "tarjou mais de uma ocorrencia"
+    assert manuais[0]["valor"] == alvo
+    assert manuais[0]["sera_tarjado"] is True
+
+    # A contraprova: digitar o mesmo texto pega a outra ocorrência também.
+    d2 = cliente.post(
+        f"/api/doc/{doc['doc_id']}/termo", json={"termo": alvo}
+    ).json()
+    assert d2["adicionados"] == 1
+
+
+def test_intervalo_aceita_selecao_no_meio_da_palavra(cliente, pdf):
+    """Seleção caractere a caractere, não palavra a palavra."""
+    doc = _enviar(cliente, pdf)
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    base = sessao.tm.text.find("Flores")
+
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/intervalo",
+        json={"inicio": base + 1, "fim": base + 4, "texto": "lor"},
+    ).json()
+    manual = [s for s in d["spans"] if s["origem"] == "usuario"][0]
+    assert manual["valor"] == "lor"
+
+
+def test_intervalo_apara_espaco_nas_pontas(cliente, pdf):
+    """Arrastar o mouse quase sempre pega espaço além do texto."""
+    doc = _enviar(cliente, pdf)
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    base = sessao.tm.text.find("Flores")
+
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/intervalo",
+        json={"inicio": base - 1, "fim": base + 7, "texto": "Flores"},
+    ).json()
+    manual = [s for s in d["spans"] if s["origem"] == "usuario"][0]
+    assert manual["valor"] == "Flores", f"nao aparou: {manual['valor']!r}"
+
+
+def test_intervalo_corrige_offset_escorregado(cliente, pdf):
+    """A proteção contra o pior modo de falha possível.
+
+    JavaScript conta comprimento em unidades UTF-16, Python em code points.
+    Um caractere fora do BMP dessincroniza os dois, e a partir dali o servidor
+    tarjaria **o trecho errado** — cobrindo texto inocente e deixando o dado
+    pessoal à mostra, sem erro nenhum.
+
+    Aqui o offset chega deslocado de propósito; o texto reivindicado é que
+    manda, e o servidor se corrige.
+    """
+    doc = _enviar(cliente, pdf)
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    correto = sessao.tm.text.find("Flores")
+
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/intervalo",
+        json={
+            "inicio": correto + 5,   # deslocado de propósito
+            "fim": correto + 11,
+            "texto": "Flores",
+        },
+    ).json()
+    manual = [s for s in d["spans"] if s["origem"] == "usuario"][0]
+    assert manual["valor"] == "Flores"
+    assert manual["rects"], "corrigiu o offset mas perdeu o retangulo"
+
+
+def test_intervalo_recusa_texto_que_nao_existe(cliente, pdf):
+    """Não achando o que o cliente diz ter selecionado, recusa em vez de
+    adivinhar. Tarjar por adivinhação é pior que não tarjar."""
+    doc = _enviar(cliente, pdf)
+    r = cliente.post(
+        f"/api/doc/{doc['doc_id']}/intervalo",
+        json={"inicio": 5, "fim": 12, "texto": "Xylophone Quixote"},
+    )
+    assert r.status_code == 422
+
+
+def test_intervalo_recusa_trecho_ja_tarjado(cliente, pdf):
+    """Evita o empilhamento de retângulos que fazia a tarja parecer presa."""
+    doc = _enviar(cliente, pdf)
+    alvo = [s for s in doc["spans"] if s["entity"] == "CPF"][0]
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    s = sessao.spans[alvo["id"]]
+
+    r = cliente.post(
+        f"/api/doc/{doc['doc_id']}/intervalo",
+        json={"inicio": s.start, "fim": s.end, "texto": s.valor},
+    )
+    assert r.status_code == 422
+    assert "já está coberto" in r.json()["detail"]
+
+
+def test_intervalo_fora_do_documento_e_recusado(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    r = cliente.post(
+        f"/api/doc/{doc['doc_id']}/intervalo",
+        json={"inicio": 10**9, "fim": 10**9 + 5, "texto": "x"},
+    )
+    assert r.status_code == 422
+
+
+def test_intervalo_apos_aprovar_invalida_download(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    cliente.post(f"/api/doc/{doc['doc_id']}/aprovar")
+    assert cliente.get(f"/api/doc/{doc['doc_id']}/download").status_code == 200
+
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    base = sessao.tm.text.find("Flores")
+    r = cliente.post(
+        f"/api/doc/{doc['doc_id']}/intervalo",
+        json={"inicio": base, "fim": base + 6, "texto": "Flores"},
+    )
+    assert r.status_code == 200, r.text
+    assert cliente.get(f"/api/doc/{doc['doc_id']}/download").status_code == 409
+
+
 # --------------------------------------------------------------------------
 # O relatório de falha precisa ser acionável
 # --------------------------------------------------------------------------

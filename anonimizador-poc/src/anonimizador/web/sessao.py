@@ -189,6 +189,108 @@ class Sessao:
         )
         return criados
 
+    def _conferir_intervalo(self, inicio: int, fim: int, texto: str) -> tuple[int, int]:
+        """Confere que o intervalo aponta mesmo para o texto que o cliente viu.
+
+        Os offsets vêm do navegador, e há uma diferença real entre os dois
+        lados: o JavaScript conta comprimento em unidades UTF-16, o Python em
+        code points. Um caractere fora do BMP num documento faz as duas
+        contagens divergirem, e a partir dali os offsets escorregam.
+
+        O modo de falha disso é o pior possível num redator: tarjar o trecho
+        **errado**, sem erro nenhum, cobrindo texto inocente e deixando o dado
+        pessoal à mostra. Ninguém perceberia até alguém ler o PDF final.
+
+        Por isso o servidor não confia no offset: ele confere. Batendo, usa.
+        Não batendo, procura o texto reivindicado numa janela ao redor e se
+        corrige. Não achando, recusa em vez de adivinhar.
+        """
+        def normal(s: str) -> str:
+            return " ".join(s.split())
+
+        alvo = normal(texto)
+        if not alvo:
+            return inicio, fim
+
+        if normal(self.tm.text[inicio:fim]) == alvo:
+            return inicio, fim
+
+        # Escorregou. Procura perto de onde o cliente disse que estava —
+        # limitar a janela evita casar com outra ocorrência do outro lado do
+        # documento, que seria uma correção pior que o erro.
+        janela = 500
+        ini_busca = max(0, inicio - janela)
+        trecho = self.tm.text[ini_busca:min(len(self.tm.text), fim + janela)]
+        for a, b in self._ocorrencias(alvo, trecho):
+            logger.warning(
+                "sessao %s: offset do cliente escorregou %d caracteres, corrigido",
+                self.doc_id,
+                abs((ini_busca + a) - inicio),
+            )
+            return ini_busca + a, ini_busca + b
+
+        raise ValueError(
+            "a seleção não corresponde ao documento; tente selecionar de novo"
+        )
+
+    def adicionar_intervalo(
+        self, inicio: int, fim: int, texto: str = ""
+    ) -> SpanUI:
+        """Tarja **exatamente** os caracteres ``[inicio, fim)``.
+
+        É o caminho da seleção com o mouse, e é deliberadamente diferente de
+        ``adicionar_por_termo``:
+
+        * **selecionar** é apontar *esta* ocorrência. O usuário marcou um
+          trecho específico na tela e espera que só ele seja coberto.
+        * **digitar** é descrever um valor. Aí faz sentido pegar todas as
+          ocorrências, porque o usuário não tem como caçar cada uma.
+
+        Tratar os dois igual — como fazíamos, mandando a seleção para a busca
+        textual — dá o resultado errado nos dois sentidos: seleciona-se um
+        nome numa cláusula e o documento inteiro fica tarjado; e um trecho que
+        aparece uma vez só chega ao servidor como texto, sujeito a não casar
+        por espaçamento.
+
+        Com offsets não há busca nenhuma: o intervalo já é a resposta.
+        """
+        n = len(self.tm.text)
+        if not (0 <= inicio < fim <= n):
+            raise ValueError("intervalo fora do documento")
+
+        inicio, fim = self._conferir_intervalo(inicio, fim, texto)
+
+        # Seleção com o mouse quase sempre pega espaço nas pontas; tarjá-lo
+        # cobriria vizinhança à toa.
+        while inicio < fim and self.tm.text[inicio].isspace():
+            inicio += 1
+        while fim > inicio and self.tm.text[fim - 1].isspace():
+            fim -= 1
+        if fim - inicio < 1:
+            raise ValueError("seleção vazia")
+
+        if any(inicio < s.end and s.start < fim for s in self.spans_ativos()):
+            raise ValueError("esse trecho já está coberto por uma tarja ativa")
+
+        if not self.tm.rects_for(inicio, fim):
+            raise ValueError("seleção sem região visível no documento")
+
+        sid = self._novo_id()
+        self.spans[sid] = SpanUI(
+            id=sid,
+            entity=MANUAL,
+            score=1.0,
+            start=inicio,
+            end=fim,
+            valor=self.tm.text[inicio:fim],
+            origem="usuario",
+        )
+        self._invalidar()
+        logger.info(
+            "sessao %s: intervalo tarjado, %d caracteres", self.doc_id, fim - inicio
+        )
+        return self.spans[sid]
+
     @staticmethod
     def _ocorrencias(termo: str, texto: str) -> list[tuple[int, int]]:
         """Onde ``termo`` aparece, tolerando diferença de espaçamento.
