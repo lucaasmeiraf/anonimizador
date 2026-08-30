@@ -156,6 +156,10 @@ imprevisível seria pior — é o rótulo que decide o operador aplicado.
 
 **Fora da Fase 1:**
 
+- Reversibilidade / pseudonimização — `goal-fase-2.md`, que também explica por
+  que o documento produzido hoje **não** tem como ser desanonimizado.
+- Conexões com nuvem e análise por LLM externa — `goal-fase-3.md`, que trata
+  as duas juntas porque as duas pedem para abrir a rede.
 - Processamento em lote / fila.
 - Autenticação, contas, multiusuário, planos.
 - Cofre reversível e pseudonimização (Fase 2).

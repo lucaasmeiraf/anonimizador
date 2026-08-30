@@ -17,13 +17,67 @@ let doc = null;
 const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------- upload
-$("arquivo").addEventListener("change", async (ev) => {
-  const arquivo = ev.target.files[0];
-  if (!arquivo) return;
+$("arquivo").addEventListener("change", (ev) => {
+  if (ev.target.files[0]) enviarArquivo(ev.target.files[0]);
+});
 
-  $("erro-upload").classList.add("hidden");
+/* Arrastar e soltar.
+ *
+ * `dragover` precisa de preventDefault ou o navegador abre o PDF numa aba e
+ * o usuário perde a tela. Os contadores de entrada/saída evitam o piscar
+ * clássico: passar sobre um filho dispara `dragleave` no pai. */
+(() => {
+  const zona = $("zona");
+  let profundidade = 0;
+
+  const parar = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  ["dragenter", "dragover", "dragleave", "drop"].forEach((evt) =>
+    zona.addEventListener(evt, parar)
+  );
+
+  zona.addEventListener("dragenter", () => {
+    profundidade += 1;
+    zona.classList.add("arrastando");
+  });
+
+  zona.addEventListener("dragleave", () => {
+    profundidade -= 1;
+    if (profundidade <= 0) zona.classList.remove("arrastando");
+  });
+
+  zona.addEventListener("drop", (e) => {
+    profundidade = 0;
+    zona.classList.remove("arrastando");
+    const arquivo = e.dataTransfer.files[0];
+    if (arquivo) enviarArquivo(arquivo);
+  });
+
+  // Soltar fora da zona não pode navegar para o arquivo.
+  ["dragover", "drop"].forEach((evt) =>
+    window.addEventListener(evt, (e) => e.preventDefault())
+  );
+})();
+
+async function enviarArquivo(arquivo) {
+  const erro = $("erro-upload");
+  erro.classList.add("hidden");
+
+  // Recusa antes de subir: erra rápido e não gasta a viagem.
+  if (!/\.pdf$/i.test(arquivo.name) && arquivo.type !== "application/pdf") {
+    erro.textContent = "Só PDF nesta fase.";
+    erro.classList.remove("hidden");
+    return;
+  }
+
   $("carregando-upload").classList.remove("hidden");
-  ev.target.disabled = true;
+  $("zona").classList.add("hidden");
+  $("progresso-sub").textContent = `${arquivo.name} · ${formatarTamanho(
+    arquivo.size
+  )}`;
 
   const corpo = new FormData();
   corpo.append("arquivo", arquivo);
@@ -34,14 +88,31 @@ $("arquivo").addEventListener("change", async (ev) => {
     doc = dados;
     montarRevisao();
   } catch (e) {
-    $("erro-upload").textContent = e.message;
-    $("erro-upload").classList.remove("hidden");
+    erro.textContent = e.message;
+    erro.classList.remove("hidden");
+    $("zona").classList.remove("hidden");
   } finally {
     $("carregando-upload").classList.add("hidden");
-    ev.target.disabled = false;
-    ev.target.value = "";
+    $("arquivo").value = "";
   }
-});
+}
+
+function formatarTamanho(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Qual modelo está detectando — muda o que esperar da revisão.
+fetch("/api/saude")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((d) => {
+    if (d) {
+      $("modelo-ativo").textContent =
+        `Detecção por ${d.ner}, ${d.entidades} tipos de dado.`;
+    }
+  })
+  .catch(() => {});
 
 // --------------------------------------------------------------- montagem
 function montarRevisao() {

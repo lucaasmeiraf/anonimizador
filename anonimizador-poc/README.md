@@ -134,6 +134,8 @@ vez de vazamento silencioso.
 | [`docs/05-politica-llm.md`](docs/05-politica-llm.md) | onde a LLM entra, e a que dados |
 | [`docs/06-resultados-fase-0.md`](docs/06-resultados-fase-0.md) | leitura dos números e decisões |
 | [`../goal-fase-1.md`](../goal-fase-1.md) | escopo da interface de revisão |
+| [`../goal-fase-2.md`](../goal-fase-2.md) | reversibilidade sob chave — e por que hoje é impossível |
+| [`../goal-fase-3.md`](../goal-fase-3.md) | o perímetro de rede: conexões de nuvem e análise por LLM |
 
 ## Estrutura
 

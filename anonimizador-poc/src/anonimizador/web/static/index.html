@@ -9,7 +9,19 @@
 <body>
 
 <header>
-  <h1>Anonimizador <span class="fase">Fase 1 — revisão</span></h1>
+  <div class="marca">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z"
+            fill="none" stroke="currentColor" stroke-width="1.7"
+            stroke-linejoin="round"/>
+      <rect x="8" y="10.5" width="8" height="2.4" rx=".5" fill="currentColor"/>
+      <rect x="9.5" y="14.4" width="5" height="2.4" rx=".5" fill="currentColor"/>
+    </svg>
+    <div>
+      <span class="nome-produto">Anonimizador</span>
+      <span class="fase">revisão assistida · LGPD</span>
+    </div>
+  </div>
   <div id="cabecalho-doc" class="hidden">
     <span id="nome-arquivo"></span>
     <button id="btn-descartar" class="secundario">Descartar documento</button>
@@ -18,17 +30,64 @@
 
 <!-- ------------------------------------------------------------------ -->
 <section id="tela-upload">
-  <div class="caixa-upload">
-    <h2>Envie um PDF para revisar</h2>
-    <p class="ajuda">
-      PDF com texto selecionável. Documento escaneado não é suportado nesta
-      fase — não há texto para remover.
-    </p>
-    <input type="file" id="arquivo" accept="application/pdf">
+  <div class="abertura">
+
+    <div class="chamada">
+      <h2>Anonimize um documento sem tirá-lo desta máquina</h2>
+      <p class="subtitulo">
+        A detecção roda localmente. O arquivo final só é liberado depois de
+        passar por uma verificação independente em dez frentes.
+      </p>
+    </div>
+
+    <label class="zona" id="zona" for="arquivo">
+      <input type="file" id="arquivo" accept="application/pdf" hidden>
+      <svg class="icone" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 15V3m0 0L8 7m4-4 4 4" fill="none" stroke="currentColor"
+              stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3 15v3.5A2.5 2.5 0 0 0 5.5 21h13a2.5 2.5 0 0 0 2.5-2.5V15"
+              fill="none" stroke="currentColor" stroke-width="1.6"
+              stroke-linecap="round"/>
+      </svg>
+      <div class="zona-titulo">Arraste um PDF aqui</div>
+      <div class="zona-sub">ou <span class="link">escolha um arquivo</span></div>
+      <div class="zona-meta">PDF com texto selecionável · até 50 MB</div>
+    </label>
+
     <p id="erro-upload" class="erro hidden"></p>
-    <p id="carregando-upload" class="hidden">
-      <span class="girando"></span> Detectando dados pessoais…
+
+    <div id="carregando-upload" class="progresso hidden">
+      <span class="girando"></span>
+      <div>
+        <div class="progresso-titulo">Detectando dados pessoais…</div>
+        <div class="progresso-sub" id="progresso-sub">
+          O modelo lê o documento inteiro; alguns segundos por página.
+        </div>
+      </div>
+    </div>
+
+    <ul class="garantias">
+      <li>
+        <strong>Sem rede</strong>
+        O serviço que lê o documento roda sem rota para fora. Verificável com
+        <code>make ui-proof</code>.
+      </li>
+      <li>
+        <strong>Redação de verdade</strong>
+        O texto sai do arquivo, junto com metadados, anexos e sumário. Não é
+        um retângulo por cima.
+      </li>
+      <li>
+        <strong>Você aprova</strong>
+        Nada é gerado antes de você revisar tarja por tarja e aprovar.
+      </li>
+    </ul>
+
+    <p class="rodape-abertura">
+      Documento escaneado ainda não é suportado — sem texto no arquivo, não há
+      o que remover. <span id="modelo-ativo"></span>
     </p>
+
   </div>
 </section>
 
