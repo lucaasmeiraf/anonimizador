@@ -143,27 +143,28 @@ O mapeamento para o vocabulário do Presidio está em `config._LABEL_MAP_PT`.
 |---|---|---|---|
 | `validators.py` | 210 | dígitos verificadores (mod-11, mod-97-10), lista de DDD | nenhuma |
 | `fakes.py` | 160 | geradores sintéticos com checksum válido | nenhuma |
-| `spans.py` | 70 | modelo de span, resolução de sobreposição | nenhuma |
-| `config.py` | 120 | entidades, limiares, configs de NER, precedência | nenhuma |
+| `spans.py` | 130 | modelo de span, resolução de sobreposição, desambiguação por âncora | nenhuma |
+| `config.py` | 150 | entidades, limiares, configs de NER, precedência, âncoras de desambiguação | nenhuma |
 | `recognizers/` | 400 | 12 reconhecedores Presidio, um por identificador | presidio |
 | `ner.py` | 220 | NlpEngine PT e reconhecedor transformer com janelamento | presidio, transformers |
 | `pipeline.py` | 95 | montagem do `AnalyzerEngine` | presidio |
 | `layout.py` | 170 | ponte offset de caractere → retângulo | PyMuPDF |
 | `pdf_redactor.py` | 170 | redação, saneamento, save não-incremental | PyMuPDF |
 | `verifier.py` | 220 | verificação em 10 vetores | PyMuPDF, pdfplumber |
+| `politica.py` | 170 | perfil de política serializável, operador por entidade | nenhuma |
 | `cli.py` | 250 | ponto de entrada único do container | todas |
 
-Os quatro primeiros não importam nada além da stdlib. Foi deliberado: é a parte
+Os quatro primeiros, mais `politica.py`, não importam nada além da stdlib. Foi deliberado: é a parte
 que decide *o que prevalece* e precisa ser testável sem carregar 2 GB de modelo.
 
 ### 4.2 Avaliação (`eval/`)
 
 | Arquivo | Responsabilidade |
 |---|---|
-| `generate_corpus.py` | gera texto + gabarito e **depois** renderiza o PDF; 5 gêneros |
+| `generate_corpus.py` | gera texto + gabarito e **depois** renderiza o PDF; 5 gêneros, 3 páginas, com tabelas e seções de duas colunas |
 | `align.py` | projeta o gabarito no texto extraído (difflib + fallback) |
 | `metrics.py` | F1 estrito, F1 relaxado, cobertura de caracteres |
-| `run_eval.py` | roda as 3 configs, mede latência, gera `report.md` |
+| `run_eval.py` | roda as 3 configs, mede latência, separa gate de vazamento e diagnóstico de resíduo, gera `report.md` |
 
 ### 4.3 Testes (`tests/`)
 
@@ -175,6 +176,9 @@ que decide *o que prevalece* e precisa ser testável sem carregar 2 GB de modelo
 | `test_metrics.py` | as três métricas discordando nos casos certos | não |
 | `test_layout.py` | alinhamento dos vetores, retângulo cobre o valor certo | não (só PDF) |
 | `test_redaction.py` | redação nos 10 vetores + controle negativo | não (só PDF) |
+| `test_desambiguacao.py` | âncora vencendo a precedência, e os empates em que ela não decide | não |
+| `test_corpus_layout.py` | offsets do gabarito em tabela, colunas e multipágina | não (só PDF) |
+| `test_politica.py` | perfil serializável; operador não implementado falha alto | não |
 | `test_recognizers.py` | reconhecedores no AnalyzerEngine real | **sim** (`slow`) |
 
 ### 4.4 Infraestrutura

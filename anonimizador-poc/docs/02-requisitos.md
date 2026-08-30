@@ -21,9 +21,9 @@ Identificadores: `RF` funcional, `RNF` não-funcional, `RS` segurança,
 | RF-03 | Detectar nomes de pessoas, organizações e locais por NER local em português | 0 | Implementado |
 | RF-04 | Usar palavras-âncora de contexto para elevar a confiança de padrões ambíguos | 0 | Implementado |
 | RF-05 | Resolver spans sobrepostos com política explícita e determinística | 0 | **Atendido** |
-| RF-06 | Converter offsets de caractere em retângulos na página, corretamente inclusive quando o valor cruza quebra de linha | 0 | Implementado |
-| RF-07 | Aplicar redação verdadeira: remover o texto do content stream, não cobri-lo | 0 | Implementado |
-| RF-08 | Sanear metadados, XMP, anotações, campos AcroForm, anexos, sumário, miniaturas e objetos órfãos | 0 | Implementado |
+| RF-06 | Converter offsets de caractere em retângulos na página, corretamente inclusive quando o valor cruza quebra de linha | 0 | **Atendido parcialmente** — 0 spans sem retângulo em 50 documentos com tabela, duas colunas e 3 páginas; o caso *valor cruzando quebra de linha* continua sem exercício no corpus (ver `06`, seção 5) |
+| RF-07 | Aplicar redação verdadeira: remover o texto do content stream, não cobri-lo | 0 | **Atendido** — nenhum vazamento atribuível à redação; os vazamentos residuais são falhas de detecção de `PERSON` |
+| RF-08 | Sanear metadados, XMP, anotações, campos AcroForm, anexos, sumário, miniaturas e objetos órfãos | 0 | **Atendido** — 10 vetores verificados por documento em 150 execuções de redação |
 | RF-09 | Verificar o arquivo final em múltiplos vetores e **reprovar** se qualquer valor tarjado sobreviver | 0 | Implementado |
 | RF-10 | Gerar corpus sintético multi-gênero com gabarito exato | 0 | Implementado |
 | RF-11 | Produzir métricas por entidade (F1 estrito, F1 relaxado, cobertura de caracteres) e latência | 0 | Implementado |
@@ -32,7 +32,9 @@ Identificadores: `RF` funcional, `RNF` não-funcional, `RS` segurança,
 | RF-14 | Pseudonimização reversível com cofre de mapa token→valor | 2 | Pendente |
 | RF-15 | Modo de anonimização irreversível, sem cofre | 2 | Pendente |
 | RF-16 | OCR de PDF escaneado | futuro | Pendente (gancho previsto na arquitetura) |
-| RF-17 | Copiloto de configuração com LLM local, sem acesso ao conteúdo do documento | 3 | Pendente |
+| RF-17 | Copiloto de configuração com LLM local, sem acesso ao conteúdo do documento | 3 | Pendente — escopo e limites de acesso fixados em [`05-politica-llm.md`](05-politica-llm.md) |
+| RF-19 | Perfil de política de anonimização serializável: operador por entidade, carregável de JSON e validado antes de tocar em documento | 1 | **Atendido** (`politica.PerfilPolitica`) — apenas `tarja` e `manter` implementados; `pseudonimo` e `mascara` são recusados por `validar_perfil` |
+| RF-20 | Seleção do tipo de anonimização pelo usuário, por entidade | 1 | Pendente — contrato pronto (RF-19), executor e tela pendentes |
 | RF-18 | Processamento em lote com fila | 1 | Pendente |
 
 ### RF-13 não é um enfeite
@@ -53,10 +55,10 @@ comercial não deve prometer isso.
 | RNF-02 | Execução comprovadamente offline | container sem interface de rede + sabotagem in-process do socket | Implementado |
 | RNF-03 | Ambiente reprodutível | versões fixadas, imagem única, corpus semeado | **Atendido** |
 | RNF-04 | Determinismo | mesma entrada produz exatamente a mesma saída | **Atendido** (lógica de spans) |
-| RNF-05 | Latência aceitável em CPU | a medir no eval; sem meta rígida na Fase 0 | Pendente de medição |
+| RNF-05 | Latência aceitável em CPU | a medir no eval; sem meta rígida na Fase 0 | **Medido** — 0,044 s/página (spaCy) e ~0,53 s/página (transformers), em documentos de 3 páginas |
 | RNF-06 | Suporte opcional a GPU | override de compose com torch CUDA | Implementado |
 | RNF-07 | Portabilidade | mesma imagem em dev, homologação e produção | Implementado |
-| RNF-08 | Documentos de dezenas a centenas de páginas | janelamento do NER já previsto | Implementado |
+| RNF-08 | Documentos de dezenas a centenas de páginas | janelamento do NER já previsto | Implementado, **não verificado** — corpus tem 3 páginas; ver `06`, seção 5 |
 | RNF-09 | Observabilidade | log estruturado, contadores por etapa | Parcial |
 | RNF-10 | Escalabilidade horizontal | container sem estado; paralelizável por documento | Implementado por construção |
 
@@ -73,6 +75,9 @@ comercial não deve prometer isso.
 | RS-05 | Não persistir o texto original do documento | Implementado (nada é gravado além do PDF de saída) |
 | RS-06 | Validação com documentos reais ocorre no ambiente do cliente, nunca no de dev ou demonstração | Regra operacional |
 | RS-07 | Cofre com criptografia envelope e chave sob controle do cliente | Pendente (Fase 2) |
+| RS-10 | LLM roda local, no container sem rede | Pendente (Fase 3) — regra R1 de [`05-politica-llm.md`](05-politica-llm.md) |
+| RS-11 | LLM nunca recebe nem escreve valor de PII; opera sobre metadados | Pendente (Fase 3) — regra R2; verificável pela assinatura do montador de prompt |
+| RS-12 | Nenhuma saída de LLM altera documento sem aprovação humana explícita | Pendente (Fase 3) — regra R3 |
 | RS-08 | Controle de acesso por papel para a operação de reversão | Pendente (Fase 2) |
 | RS-09 | Trilha de auditoria de cada operação de anonimização e reversão | Pendente (Fase 2) |
 | RS-10 | Imagem sem credenciais, tokens ou segredos embutidos | **Atendido** |
