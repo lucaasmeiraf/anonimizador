@@ -111,3 +111,33 @@ def peso_precedencia(entidade: str) -> int:
         return len(PRECEDENCIA) - PRECEDENCIA.index(entidade)
     except ValueError:
         return 0
+
+
+# --------------------------------------------------------------------------
+# Desambiguação de identificadores de mesma forma
+# --------------------------------------------------------------------------
+# CPF, PIS/PASEP e CNH são todos 11 dígitos e nada na *forma* os distingue.
+# Pior: um mesmo número pode satisfazer mais de um checksum ao mesmo tempo —
+# não é hipótese, acontece no corpus da Fase 0. Nesse caso `PRECEDENCIA`
+# resolvia sempre pela ordem estática (CPF antes de PIS antes de CNH),
+# descartando a única evidência que de fato desambigua: a palavra-âncora que
+# vem imediatamente antes do número no texto ("CNH nº 22393559907").
+#
+# O trecho continuava sendo tarjado — não havia risco de vazamento — mas o
+# rótulo saía errado, o que degrada a métrica de CNH e cria falso positivo
+# fantasma em CPF e PIS_PASEP. Rótulo errado também importa para o produto:
+# é ele que decide o operador de anonimização aplicado a cada trecho.
+AMBIGUAS_MESMA_FORMA = ("CPF", "PIS_PASEP", "CNH")
+
+# Termos que, encontrados imediatamente antes do número, decidem o rótulo.
+# Normalizados (minúsculas, sem acento) antes da comparação.
+ANCORAS_DESAMBIGUACAO: dict[str, tuple[str, ...]] = {
+    "CNH": ("cnh", "habilitacao", "renach", "condutor", "detran", "registro cnh"),
+    "PIS_PASEP": ("pis", "pasep", "nit", "nis"),
+    "CPF": ("cpf", "cadastro de pessoa", "cadastro nacional da pessoa fisica"),
+}
+
+# Janela, em caracteres, olhada para trás a partir do início do número.
+# 40 cobre "CNH nº " e "PIS/PASEP: " com folga sem alcançar o campo anterior
+# da ficha, que é o que produziria âncora cruzada.
+JANELA_ANCORA = 40

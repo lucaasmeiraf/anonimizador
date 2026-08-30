@@ -43,7 +43,9 @@ def build_registry(language: str = "pt") -> RecognizerRegistry:
     documento brasileiro, geram falso positivo em cima justamente dos campos
     numéricos que nos interessam. O NER entra separado, em ``ner.py``.
     """
-    registry = RecognizerRegistry()
+    # `supported_languages` precisa ser declarado aqui: o padrao do Presidio e
+    # ["en"], e o AnalyzerEngine recusa a combinacao registry(en) + engine(pt).
+    registry = RecognizerRegistry(supported_languages=[language])
     for rec in build_recognizers(language):
         registry.add_recognizer(rec)
     return registry

@@ -24,9 +24,20 @@ from presidio_analyzer.predefined_recognizers import SpacyRecognizer
 
 from . import config, ner
 from .recognizers import build_registry
-from .spans import Span, resolver_sobreposicoes, spans_para_redigir
+from .spans import (
+    Span,
+    desambiguar_por_ancora,
+    resolver_sobreposicoes,
+    spans_para_redigir,
+)
 
-__all__ = ["DetectionPipeline", "Span", "resolver_sobreposicoes", "spans_para_redigir"]
+__all__ = [
+    "DetectionPipeline",
+    "Span",
+    "desambiguar_por_ancora",
+    "resolver_sobreposicoes",
+    "spans_para_redigir",
+]
 
 
 class DetectionPipeline:
@@ -85,7 +96,7 @@ class DetectionPipeline:
             for r in brutos
             if r.end > r.start
         ]
-        return resolver_sobreposicoes(spans)
+        return resolver_sobreposicoes(spans, texto)
 
     def analyze_timed(self, texto: str) -> tuple[list[Span], float]:
         t0 = time.perf_counter()
