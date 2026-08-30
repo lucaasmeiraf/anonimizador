@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anonimizador — revisão</title>
+<link rel="stylesheet" href="/static/estilo.css">
+</head>
+<body>
+
+<header>
+  <h1>Anonimizador <span class="fase">Fase 1 — revisão</span></h1>
+  <div id="cabecalho-doc" class="hidden">
+    <span id="nome-arquivo"></span>
+    <button id="btn-descartar" class="secundario">Descartar documento</button>
+  </div>
+</header>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="tela-upload">
+  <div class="caixa-upload">
+    <h2>Envie um PDF para revisar</h2>
+    <p class="ajuda">
+      PDF com texto selecionável. Documento escaneado não é suportado nesta
+      fase — não há texto para remover.
+    </p>
+    <input type="file" id="arquivo" accept="application/pdf">
+    <p id="erro-upload" class="erro hidden"></p>
+    <p id="carregando-upload" class="hidden">
+      <span class="girando"></span> Detectando dados pessoais…
+    </p>
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<main id="tela-revisao" class="hidden">
+
+  <div class="painéis">
+    <section class="painel">
+      <h2>Original</h2>
+      <div class="rolagem" id="rolagem-esq"></div>
+    </section>
+    <section class="painel">
+      <h2>Anonimizado <span class="dica">clique numa tarja para desligá-la</span></h2>
+      <div class="rolagem" id="rolagem-dir"></div>
+    </section>
+  </div>
+
+  <aside id="lateral">
+    <div class="bloco">
+      <h3>O que será tarjado</h3>
+      <ul id="inventario"></ul>
+    </div>
+
+    <div class="bloco">
+      <h3>Faltou alguma coisa?</h3>
+      <p class="ajuda">
+        Digite o trecho exato que não foi tarjado. Todas as ocorrências
+        entram.
+      </p>
+      <div class="linha">
+        <input type="text" id="termo" placeholder="ex.: Maria Fernanda da Mata">
+        <button id="btn-termo">Tarjar</button>
+      </div>
+      <p id="aviso-termo" class="aviso hidden"></p>
+    </div>
+
+    <div class="bloco" id="bloco-aprovar">
+      <button id="btn-aprovar" class="primario">Aprovar e gerar PDF</button>
+      <p class="ajuda">
+        O PDF só é gerado agora. Ele passa por verificação em 10 vetores antes
+        de ser liberado.
+      </p>
+      <div id="processando" class="hidden">
+        <span class="girando"></span> Redigindo e verificando…
+      </div>
+      <div id="resultado" class="hidden"></div>
+    </div>
+
+    <details class="bloco limitacoes">
+      <summary>O que a anonimização altera além das tarjas</summary>
+      <ul>
+        <li>Layout, paginação e fontes ficam intactos — não há refluxo.</li>
+        <li>Todos os hyperlinks são removidos, inclusive os inofensivos.</li>
+        <li>O sumário/bookmarks é apagado por inteiro.</li>
+        <li>Metadados são zerados: autor, título, data de criação, produtor.</li>
+        <li>
+          <strong>Assinatura digital é invalidada.</strong> Remover texto muda
+          os bytes assinados; não há contorno. Não testado nesta fase.
+        </li>
+      </ul>
+    </details>
+  </aside>
+
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

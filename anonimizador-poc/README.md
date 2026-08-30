@@ -28,10 +28,33 @@ Depois de reiniciar, confirme com `docker info`.
 .\run.ps1 test            # testes rápidos, sem carregar modelos
 .\run.ps1 corpus          # gera 50 PDFs sintéticos + gabarito
 .\run.ps1 eval            # avaliação nas 3 configurações de NER -> eval/report.md
+.\run.ps1 diagnostico     # por que PERSON vaza: rótulo errado ou não detectado
 .\run.ps1 offline-proof   # prova que o pipeline roda sem rede
 ```
 
 Em Linux/macOS/WSL, `make build`, `make eval` etc. — os alvos são os mesmos.
+
+### Interface de revisão (Fase 1)
+
+```powershell
+.\run.ps1 ui              # sobe em http://127.0.0.1:8000
+.\run.ps1 ui-proof        # prova que a porta responde E que não há egress
+.\run.ps1 ui-down         # derruba
+```
+
+O modelo leva ~30 s para carregar na subida; `docker compose logs -f ui`
+acompanha. O fluxo é: enviar PDF → revisar as tarjas lado a lado → corrigir
+o que estiver errado → **Aprovar**, que só então gera o PDF, verifica em 10
+vetores e libera o download. Se a verificação reprovar, não existe arquivo
+para baixar.
+
+> **Sobre a rede.** O serviço `ui` — que faz toda a detecção e redação —
+> roda numa rede `internal: true`, sem rota para fora. O `ui-proxy` é o
+> único processo com saída de rede, e ele só copia bytes entre a porta
+> publicada e o `ui`. `ui-proof` verifica as duas metades e falha se algum
+> caminho de egress estiver aberto. Ver `goal-fase-1.md`, seção
+> "Ambiente", para as cinco configurações testadas e por que as outras
+> quatro não servem.
 
 Redigir um documento específico:
 
@@ -108,6 +131,9 @@ vez de vazamento silencioso.
 | [`docs/02-requisitos.md`](docs/02-requisitos.md) | requisitos e critérios de aceite |
 | [`docs/03-configuracao.md`](docs/03-configuracao.md) | todos os pontos de ajuste |
 | [`docs/04-implantacao.md`](docs/04-implantacao.md) | passo a passo, do host ao ambiente do cliente |
+| [`docs/05-politica-llm.md`](docs/05-politica-llm.md) | onde a LLM entra, e a que dados |
+| [`docs/06-resultados-fase-0.md`](docs/06-resultados-fase-0.md) | leitura dos números e decisões |
+| [`../goal-fase-1.md`](../goal-fase-1.md) | escopo da interface de revisão |
 
 ## Estrutura
 
@@ -122,10 +148,16 @@ vez de vazamento silencioso.
 | `src/anonimizador/pipeline.py` | montagem do AnalyzerEngine |
 | `src/anonimizador/pdf_redactor.py` | redação + saneamento |
 | `src/anonimizador/verifier.py` | verificação em 10 vetores |
+| `src/anonimizador/politica.py` | `PerfilPolitica` — operador por entidade |
+| `src/anonimizador/web/app.py` | API da interface de revisão |
+| `src/anonimizador/web/sessao.py` | estado do documento e o gate de download |
+| `src/anonimizador/web/forward.py` | encaminhador TCP — a única peça com rede |
+| `src/anonimizador/web/prova_rede.py` | prova, de dentro do `ui`, que não há egress |
 | `eval/generate_corpus.py` | corpus sintético + gabarito exato |
 | `eval/align.py` | projeta o gabarito no texto extraído |
 | `eval/metrics.py` | F1 estrito, F1 relaxado, cobertura de caracteres |
 | `eval/run_eval.py` | harness e geração do `report.md` |
+| `eval/diagnostico_person.py` | causa dos vazamentos de `PERSON` |
 
 ## Configurações de NER comparadas
 

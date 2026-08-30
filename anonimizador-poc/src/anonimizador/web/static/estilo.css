@@ -1,0 +1,212 @@
+:root {
+  --fundo: #f6f6f4;
+  --papel: #ffffff;
+  --borda: #d9d9d4;
+  --texto: #1c1c1a;
+  --suave: #6b6b64;
+  --acento: #1f5fa8;
+  --ok: #1f7a45;
+  --falha: #a8241f;
+  --tarja: #16161a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--fundo);
+  color: var(--texto);
+}
+
+.hidden { display: none !important; }
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--papel);
+  border-bottom: 1px solid var(--borda);
+}
+
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+.fase { color: var(--suave); font-weight: 400; margin-left: 8px; }
+
+#cabecalho-doc { display: flex; align-items: center; gap: 12px; }
+#nome-arquivo { color: var(--suave); }
+
+/* ---------------------------------------------------------------- upload */
+#tela-upload { display: flex; justify-content: center; padding: 80px 20px; }
+
+.caixa-upload {
+  background: var(--papel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 32px;
+  max-width: 520px;
+  width: 100%;
+}
+
+.caixa-upload h2 { margin: 0 0 8px; font-size: 18px; }
+.ajuda { color: var(--suave); font-size: 13px; margin: 6px 0 16px; }
+
+/* -------------------------------------------------------------- revisão */
+#tela-revisao {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 16px;
+  padding: 16px 20px;
+  height: calc(100vh - 57px);
+}
+
+.painéis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; }
+
+.painel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--papel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.painel h2 {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--borda);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dica { font-weight: 400; color: var(--suave); font-size: 12px; }
+
+.rolagem { flex: 1; overflow: auto; padding: 12px; background: #eceae6; }
+
+.pagina { position: relative; margin: 0 auto 12px; width: fit-content; }
+.pagina img { display: block; width: 100%; height: auto; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.pagina .rotulo-pagina {
+  text-align: center; font-size: 11px; color: var(--suave); padding: 4px 0;
+}
+
+.camada-tarjas { position: absolute; inset: 0; }
+
+.tarja {
+  position: absolute;
+  background: var(--tarja);
+  cursor: pointer;
+  border-radius: 1px;
+}
+.tarja:hover { outline: 2px solid var(--acento); outline-offset: 1px; }
+
+/* Span desligado: contorno tracejado, sem preenchimento — o texto reaparece,
+   que é exatamente o que o revisor precisa enxergar antes de aprovar. */
+.tarja.desligada { background: transparent; border: 1.5px dashed #b03a35; }
+.tarja.manual { background: #123a6b; }
+
+/* -------------------------------------------------------------- lateral */
+#lateral { overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+
+.bloco {
+  background: var(--papel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.bloco h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+
+#inventario { list-style: none; margin: 0; padding: 0; }
+
+#inventario li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f0ec;
+}
+#inventario li:last-child { border-bottom: 0; }
+#inventario .nome { flex: 1; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; }
+#inventario .qtd { color: var(--suave); font-variant-numeric: tabular-nums; }
+
+.linha { display: flex; gap: 6px; }
+.linha input { flex: 1; min-width: 0; }
+
+input[type=text] {
+  padding: 6px 8px;
+  border: 1px solid var(--borda);
+  border-radius: 5px;
+  font: inherit;
+  background: var(--papel);
+  color: var(--texto);
+}
+
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--borda);
+  background: var(--papel);
+  color: var(--texto);
+  cursor: pointer;
+}
+button:hover { border-color: var(--suave); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+.primario {
+  width: 100%;
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+  font-weight: 600;
+  padding: 10px;
+}
+.primario:hover { background: #17497f; }
+
+.secundario { font-size: 13px; }
+
+.erro { color: var(--falha); }
+.aviso { color: var(--suave); font-size: 12px; }
+
+#resultado .cabeca { font-weight: 600; margin-bottom: 6px; }
+#resultado.ok .cabeca { color: var(--ok); }
+#resultado.falha .cabeca { color: var(--falha); }
+#resultado ul { margin: 6px 0; padding-left: 18px; color: var(--suave); font-size: 12px; }
+#resultado a.baixar {
+  display: block;
+  text-align: center;
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--ok);
+  color: #fff;
+  border-radius: 5px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.limitacoes summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.limitacoes ul { margin: 10px 0 0; padding-left: 18px; color: var(--suave); font-size: 12px; }
+.limitacoes li { margin-bottom: 5px; }
+
+.girando {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid var(--borda);
+  border-top-color: var(--acento);
+  border-radius: 50%;
+  animation: girar .7s linear infinite;
+  vertical-align: -2px;
+}
+@keyframes girar { to { transform: rotate(360deg); } }
+
+@media (max-width: 1100px) {
+  #tela-revisao { grid-template-columns: 1fr; height: auto; }
+  .painéis { grid-template-columns: 1fr; }
+  .rolagem { max-height: 60vh; }
+}

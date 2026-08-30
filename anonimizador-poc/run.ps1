@@ -4,7 +4,7 @@
 #   .\run.ps1 eval
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build','test','test-all','corpus','eval','eval-fast','offline-proof',
+    [ValidateSet('build','test','test-all','corpus','eval','eval-fast','diagnostico','ui','ui-down','ui-proof','offline-proof',
                  'demo','shell','gpu-build','gpu-eval','clean','help')]
     [string]$Target = 'help'
 )
@@ -21,6 +21,34 @@ switch ($Target) {
     'corpus'        { docker compose run --rm corpus }
     'eval'          { docker compose run --rm eval }
     'eval-fast'     { docker compose run --rm cli eval --ner spacy }
+    'diagnostico'   { docker compose run --rm diagnostico }
+    'ui'            {
+        docker compose up -d ui ui-proxy
+        Write-Host ''
+        Write-Host '  interface em http://127.0.0.1:8000'
+        Write-Host '  o modelo leva ~30 s para carregar; acompanhe com:'
+        Write-Host '    docker compose logs -f ui'
+        Write-Host ''
+    }
+    'ui-down'       { docker compose down --remove-orphans }
+    'ui-proof'      {
+        docker compose up -d ui ui-proxy
+        Write-Host 'aguardando a UI subir...'
+        $ok = $false
+        foreach ($i in 1..60) {
+            try {
+                Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/saude' -TimeoutSec 3 | Out-Null
+                $ok = $true; break
+            } catch { Start-Sleep -Seconds 2 }
+        }
+        if (-not $ok) { Write-Error 'a UI nao respondeu'; exit 1 }
+        Write-Host ''
+        Write-Host '--- metade 1: a porta responde do host ---'
+        Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/saude' | ConvertTo-Json -Compress
+        Write-Host ''
+        Write-Host '--- metade 2: o servico ui nao tem egress ---'
+        docker compose exec -T ui python -m anonimizador.web.prova_rede
+    }
     'offline-proof' { docker compose run --rm offline-proof }
     'demo'          {
         docker compose run --rm cli redact `
@@ -45,6 +73,10 @@ switch ($Target) {
         Write-Host '  corpus         gera 50 PDFs sinteticos + gabarito'
         Write-Host '  eval           avaliacao completa nas 3 configuracoes de NER'
         Write-Host '  eval-fast      avaliacao so com spaCy (iteracao rapida)'
+        Write-Host '  diagnostico    por que PERSON vaza: nao detectado ou rotulo errado'
+        Write-Host '  ui             sobe a interface em http://127.0.0.1:8000'
+        Write-Host '  ui-down        derruba a interface'
+        Write-Host '  ui-proof       prova que a UI responde E nao tem egress'
         Write-Host '  offline-proof  prova que o pipeline roda sem rede'
         Write-Host '  demo           redige um documento do corpus'
         Write-Host '  shell          shell interativo no container'
