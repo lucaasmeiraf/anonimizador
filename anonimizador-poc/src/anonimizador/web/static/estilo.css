@@ -22,6 +22,9 @@ body {
 .hidden { display: none !important; }
 
 header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -170,12 +173,20 @@ header {
 }
 
 /* -------------------------------------------------------------- revisão */
+/* A página inteira rola. Antes `#tela-revisao` tinha `height: 100vh` e cada
+   painel rolava por dentro: a janela ficava travada, a lateral não tinha a
+   que "grudar", e a sincronia entre os painéis dependia de espelhar
+   `scrollTop` no JavaScript.
+
+   Com a rolagem na página, os dois painéis são colunas do mesmo grid e sobem
+   juntos por construção — a sincronia deixa de ser código e passa a ser
+   layout. E a lateral vira `sticky`, acompanhando a descida. */
 #tela-revisao {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 16px;
-  padding: 16px 20px;
-  height: calc(100vh - 57px);
+  padding: 16px 20px 40px;
+  align-items: start;
 }
 
 .painéis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; }
@@ -187,15 +198,21 @@ header {
   background: var(--papel);
   border: 1px solid var(--borda);
   border-radius: 8px;
-  overflow: hidden;
 }
 
+/* O cabeçalho de cada painel gruda logo abaixo do cabeçalho do produto, para
+   não se perder de qual coluna é qual ao descer o documento. */
 .painel h2 {
+  position: sticky;
+  top: 47px;
+  z-index: 3;
   margin: 0;
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 600;
+  background: var(--papel);
   border-bottom: 1px solid var(--borda);
+  border-radius: 8px 8px 0 0;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -204,7 +221,7 @@ header {
 
 .dica { font-weight: 400; color: var(--suave); font-size: 12px; }
 
-.rolagem { flex: 1; overflow: auto; padding: 12px; background: #eceae6; }
+.rolagem { padding: 12px; background: #eceae6; border-radius: 0 0 8px 8px; }
 
 .pagina { position: relative; margin: 0 auto 12px; width: fit-content; }
 .pagina img { display: block; width: 100%; height: auto; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
@@ -247,23 +264,85 @@ header {
   cursor: text;
 }
 
-.camada-texto span::selection { background: rgba(31, 95, 168, .35); }
+/* O realce da seleção é o **único** retorno visual que o usuário tem: o texto
+   é transparente, então sem isto ele seleciona às cegas. Opaco o bastante
+   para se ver sobre a imagem da página. */
+.camada-texto span::selection { background: rgba(31, 95, 168, .38); }
+.camada-texto span::-moz-selection { background: rgba(31, 95, 168, .38); }
 
 .camada-tarjas { z-index: 2; }
 
+/* ------------------------------------------------- balão sobre a seleção */
+/* Aparece ancorado ao trecho selecionado, como um menu de contexto. Antes a
+   ação vivia num botão na lateral: o usuário selecionava aqui e tinha de
+   procurar o botão do outro lado da tela. */
+#balao {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 340px;
+  padding: 6px 6px 6px 10px;
+  background: var(--texto);
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
+  font-size: 12.5px;
+  /* Nasce fora da tela para não piscar no canto antes de ser posicionado. */
+  transform: translate(-50%, -100%);
+}
+
+#balao::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: var(--texto);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+#balao-texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: .85;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}
+
+#balao-tarjar {
+  flex: none;
+  background: #fff;
+  color: var(--texto);
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+#balao-tarjar:hover { background: #e9e9e4; }
+
 /* -------------------------------------------------------------- lateral */
-/* `sticky` para o botão de aprovar e o inventário acompanharem a rolagem —
-   num documento longo eles saíam da tela e o revisor tinha de voltar ao topo
-   a cada correção. */
+/* Dois scrolls, como pedido:
+   1. a página rola, e a lateral acompanha (`sticky` abaixo do cabeçalho);
+   2. quando o conteúdo dela é mais alto que a janela, ela rola por dentro
+      (`max-height` + `overflow: auto`).
+   Sem o `max-height` o `sticky` gruda a lateral inteira e o fim dela fica
+   inalcançável em documento longo. */
 #lateral {
   position: sticky;
-  top: 0;
+  top: 59px;
   align-self: start;
-  max-height: calc(100vh - 89px);
-  overflow: auto;
+  max-height: calc(100vh - 75px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding-bottom: 4px;
 }
 
 .bloco {

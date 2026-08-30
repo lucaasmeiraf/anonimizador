@@ -305,6 +305,80 @@ def test_termo_curto_demais_e_recusado(cliente, pdf):
     assert r.status_code == 422
 
 
+# --------------------------------------------------------------------------
+# Busca tolerante a espaçamento
+# --------------------------------------------------------------------------
+# A camada de texto entrega as palavras separadas por espaço simples. O texto
+# extraído do PDF tem os espaçamentos que o documento tem — inclusive quebra
+# de linha no meio de um nome. Sem tolerância, selecionar um trecho na tela e
+# mandar tarjar não encontrava nada, e o botão parecia morto.
+@pytest.mark.parametrize(
+    "termo",
+    [
+        "Rua das Flores",       # como está no texto
+        "Rua  das  Flores",     # espaços a mais, como vem de uma seleção
+        " Rua das Flores ",     # sobra nas pontas
+        "Rua\ndas\nFlores",     # como viria de um trecho quebrado em linhas
+    ],
+)
+def test_termo_tolera_espacamento(cliente, pdf, termo):
+    doc = _enviar(cliente, pdf)
+    d = cliente.post(f"/api/doc/{doc['doc_id']}/termo", json={"termo": termo}).json()
+    assert d["adicionados"] == 1, f"nao achou com espacamento {termo!r}"
+
+
+def test_termo_tolerante_nao_vira_busca_difusa(cliente, pdf):
+    """Tolerar espaço não é tolerar erro.
+
+    A flexibilidade vale **só** para espaço em branco. Texto errado continua
+    não casando; se casasse, a tarja manual deixaria de ser previsível, e
+    previsibilidade é o que a torna auditável.
+
+    Substring continua casando de propósito — ``Rua das Flor`` dentro de
+    ``Rua das Flores`` sempre casou, e é o que permite tarjar um sobrenome
+    isolado. O que não pode é aproximação.
+    """
+    doc = _enviar(cliente, pdf)
+    for errado in [
+        "Ruadas Flores",    # faltou o espaço: não é diferença de espaçamento
+        "Rua de Flores",    # palavra trocada
+        "Rua das Flarez",   # grafia errada
+        "Flores das Rua",   # ordem trocada
+    ]:
+        d = cliente.post(
+            f"/api/doc/{doc['doc_id']}/termo", json={"termo": errado}
+        ).json()
+        assert d["adicionados"] == 0, f"{errado!r} nao deveria casar"
+
+
+def test_substring_continua_casando(cliente, pdf):
+    """É o que permite tarjar só o sobrenome de um nome já detectado."""
+    doc = _enviar(cliente, pdf)
+    d = cliente.post(f"/api/doc/{doc['doc_id']}/termo", json={"termo": "Flores"}).json()
+    assert d["adicionados"] == 1
+
+
+def test_termo_quebrado_entre_linhas_e_encontrado(cliente, tmp_pdf):
+    """O caso que motivou a mudança.
+
+    O usuário seleciona um nome que a tela mostra numa linha só; no texto
+    extraído ele está partido pela quebra de linha do PDF.
+    """
+    caminho = tmp_pdf(
+        ["Requerente: Mariana Aparecida", "Souza, brasileira, servidora."],
+        nome="quebrado.pdf",
+    )
+    with open(caminho, "rb") as fh:
+        doc = cliente.post(
+            "/api/doc", files={"arquivo": ("quebrado.pdf", fh, "application/pdf")}
+        ).json()
+
+    d = cliente.post(
+        f"/api/doc/{doc['doc_id']}/termo", json={"termo": "Mariana Aparecida Souza"}
+    ).json()
+    assert d["adicionados"] == 1
+
+
 def test_termo_nao_empilha_sobre_tarja_ativa(cliente, pdf):
     """O defeito que fazia a tarja parecer indesligável.
 

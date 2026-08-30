@@ -121,9 +121,6 @@
         <input type="text" id="termo" placeholder="ex.: Maria Fernanda da Mata">
         <button id="btn-termo">Tarjar</button>
       </div>
-      <button id="btn-selecao" class="secundario largo hidden">
-        Tarjar o trecho selecionado
-      </button>
       <p id="aviso-termo" class="aviso hidden"></p>
       <div id="manuais" class="hidden">
         <div class="rotulo-lista">Trechos que você adicionou</div>
@@ -159,6 +156,12 @@
   </aside>
 
 </main>
+
+<!-- Balão que aparece sobre o texto selecionado, como um menu de contexto. -->
+<div id="balao" class="hidden" role="dialog" aria-label="Ação sobre a seleção">
+  <span id="balao-texto"></span>
+  <button id="balao-tarjar">Tarjar</button>
+</div>
 
 <script src="/static/app.js"></script>
 </body>

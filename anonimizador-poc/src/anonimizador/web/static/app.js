@@ -263,21 +263,17 @@ function montarListaManuais() {
     porValor.get(s.valor).push(s);
   }
 
+  // Só "apagar". Havia também um "desligar", que duplicava o clique na tarja
+  // sem acrescentar nada e ainda assim confundia: o retângulo continuava
+  // visível, tracejado, e parecia não ter obedecido. Para um trecho que o
+  // próprio usuário adicionou, a intenção é remover, não manter desligado.
   for (const [valor, spans] of porValor) {
-    const ligados = spans.filter((s) => s.ativo).length;
     const li = document.createElement("li");
 
     const txt = document.createElement("span");
-    txt.className = "txt" + (ligados ? "" : " off");
+    txt.className = "txt";
     txt.textContent = spans.length > 1 ? `${valor} (${spans.length}×)` : valor;
     txt.title = valor;
-
-    const alt = document.createElement("button");
-    alt.textContent = ligados ? "desligar" : "ligar";
-    alt.addEventListener("click", async () => {
-      for (const s of spans) await alternar(s.id, !ligados, false);
-      redesenhar();
-    });
 
     const del = document.createElement("button");
     del.textContent = "apagar";
@@ -290,7 +286,7 @@ function montarListaManuais() {
       redesenhar();
     });
 
-    li.append(txt, alt, del);
+    li.append(txt, del);
     ul.appendChild(li);
   }
 }
@@ -375,35 +371,83 @@ $("termo").addEventListener("keydown", (e) => {
   if (e.key === "Enter") adicionarTermo();
 });
 
-/* Seleção no documento vira termo com um clique.
+/* ------------------------------------------------ seleção no documento ---
  *
- * O Ctrl+C do navegador continua funcionando — a camada de texto é texto de
- * verdade. Este botão só evita a viagem até o campo para colar. */
-$("btn-selecao").addEventListener("click", () => {
-  const sel = selecaoAtual();
-  if (sel) adicionarTermo(sel);
-});
+ * `getSelection().toString()` NÃO serve aqui, e esse foi o bug que fazia o
+ * botão parecer morto: cada palavra é um <span> posicionado em absoluto, sem
+ * nenhum nó de espaço entre eles. O navegador concatena o que encontra, e o
+ * resultado sai grudado — "OFÍCIONº359/2026" — que não existe em lugar
+ * nenhum do documento. A busca não achava nada e nada acontecia.
+ *
+ * A reconstrução correta é percorrer os spans que a seleção toca, na ordem
+ * do DOM (que é a ordem de leitura da extração), e juntá-los com espaço. */
+function palavrasSelecionadas() {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
 
-function selecaoAtual() {
-  const s = window.getSelection();
-  if (!s || s.isCollapsed) return "";
-  // Só interessa seleção feita dentro do documento, não na lateral.
-  const dentro =
-    s.anchorNode &&
-    s.anchorNode.parentElement &&
-    s.anchorNode.parentElement.closest(".camada-texto");
-  const txt = s.toString().replace(/\s+/g, " ").trim();
-  return dentro && txt.length >= 2 ? txt : "";
+  const range = sel.getRangeAt(0);
+  const camada =
+    range.commonAncestorContainer.nodeType === 1
+      ? range.commonAncestorContainer.closest(".camada-texto")
+      : range.commonAncestorContainer.parentElement?.closest(".camada-texto");
+  if (!camada) return null; // seleção fora do documento (lateral, cabeçalho)
+
+  const dentro = [...camada.children].filter((s) => range.intersectsNode(s));
+  if (!dentro.length) return null;
+
+  const texto = dentro
+    .map((s) => s.textContent)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return texto.length >= 2 ? { texto, range } : null;
 }
 
+const balao = $("balao");
+
+function posicionarBalao(range) {
+  const r = range.getBoundingClientRect();
+  if (!r.width && !r.height) return esconderBalao();
+  balao.style.left = `${r.left + r.width / 2}px`;
+  // 10px acima do topo da seleção; o transform no CSS ancora pelo rodapé.
+  balao.style.top = `${r.top - 10}px`;
+  balao.classList.remove("hidden");
+}
+
+function esconderBalao() {
+  balao.classList.add("hidden");
+  balao.dataset.termo = "";
+}
+
+/* `selectionchange` dispara a cada caractere arrastado. Reagir a todos deixa
+ * o balão tremendo junto do cursor, então ele só se posiciona quando o
+ * usuário solta — que é quando a seleção está de fato pronta. */
 document.addEventListener("selectionchange", () => {
-  const sel = selecaoAtual();
-  const btn = $("btn-selecao");
-  btn.classList.toggle("hidden", !sel);
-  if (sel) {
-    const curto = sel.length > 40 ? sel.slice(0, 40) + "…" : sel;
-    btn.textContent = `Tarjar "${curto}"`;
-  }
+  if (!palavrasSelecionadas()) esconderBalao();
+});
+
+document.addEventListener("mouseup", () => {
+  // Clicar no próprio balão não pode reavaliar a seleção antes do clique.
+  setTimeout(() => {
+    const sel = palavrasSelecionadas();
+    if (!sel) return esconderBalao();
+    balao.dataset.termo = sel.texto;
+    $("balao-texto").textContent =
+      sel.texto.length > 32 ? sel.texto.slice(0, 32) + "…" : sel.texto;
+    posicionarBalao(sel.range);
+  }, 0);
+});
+
+// O balão é `position: fixed`; ao rolar, a seleção sai de baixo dele.
+window.addEventListener("scroll", esconderBalao, true);
+
+$("balao-tarjar").addEventListener("mousedown", (e) => e.preventDefault());
+$("balao-tarjar").addEventListener("click", async () => {
+  const termo = balao.dataset.termo;
+  esconderBalao();
+  window.getSelection()?.removeAllRanges();
+  if (termo) await adicionarTermo(termo);
 });
 
 async function adicionarTermo(valor) {
@@ -544,24 +588,14 @@ $("btn-descartar").addEventListener("click", async () => {
   location.reload();
 });
 
-/* Rolagem espelhada. A trava evita o laço infinito de cada painel reagir ao
- * scroll que ele mesmo causou no outro. */
-function sincronizarRolagem() {
-  const esq = $("rolagem-esq");
-  const dir = $("rolagem-dir");
-  let travado = false;
-
-  const espelhar = (origem, destino) => () => {
-    if (travado) return;
-    travado = true;
-    destino.scrollTop = origem.scrollTop;
-    destino.scrollLeft = origem.scrollLeft;
-    requestAnimationFrame(() => (travado = false));
-  };
-
-  esq.addEventListener("scroll", espelhar(esq, dir));
-  dir.addEventListener("scroll", espelhar(dir, esq));
-}
+/* A sincronia entre os painéis deixou de ser código.
+ *
+ * Antes cada painel tinha rolagem própria e o JavaScript espelhava
+ * `scrollTop` de um no outro, com uma trava para não entrar em laço. Agora a
+ * rolagem é da página: os dois painéis são colunas do mesmo grid, com a mesma
+ * altura, e sobem juntos por construção. Nada para espelhar, nada para
+ * destravar, nada que possa sair de sincronia. */
+function sincronizarRolagem() {}
 
 function escapar(s) {
   const d = document.createElement("div");

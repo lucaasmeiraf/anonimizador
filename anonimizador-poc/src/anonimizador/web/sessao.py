@@ -25,6 +25,7 @@ Três invariantes, na ordem em que importam:
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 import shutil
 import threading
@@ -152,28 +153,47 @@ class Sessao:
 
         criados: list[SpanUI] = []
         texto = self.tm.text
-        pos = texto.find(termo)
-        while pos != -1:
-            fim = pos + len(termo)
-            if not sobreposto(pos, fim) and self.tm.rects_for(pos, fim):
+        for ini, fim in self._ocorrencias(termo, texto):
+            if not sobreposto(ini, fim) and self.tm.rects_for(ini, fim):
                 sid = self._novo_id()
                 self.spans[sid] = SpanUI(
                     id=sid,
                     entity=MANUAL,
                     score=1.0,
-                    start=pos,
+                    start=ini,
                     end=fim,
-                    valor=texto[pos:fim],
+                    valor=texto[ini:fim],
                     origem="usuario",
                 )
                 criados.append(self.spans[sid])
-            pos = texto.find(termo, pos + 1)
 
         self._invalidar()
         logger.info(
             "sessao %s: termo adicionado, %d ocorrencias", self.doc_id, len(criados)
         )
         return criados
+
+    @staticmethod
+    def _ocorrencias(termo: str, texto: str) -> list[tuple[int, int]]:
+        """Onde ``termo`` aparece, tolerando diferença de espaçamento.
+
+        Busca literal não serve aqui, e o motivo aparece assim que alguém
+        seleciona um trecho na tela: o que a pessoa vê como
+        ``Maria Fernanda da Mata`` numa linha só pode estar no texto extraído
+        como ``Maria Fernanda\\nda Mata``, porque o PDF quebrou a linha ali. O
+        ``find`` não acha, a tela responde "nenhuma ocorrência", e o usuário
+        conclui — com razão — que o botão não funciona.
+
+        Qualquer sequência de espaço em branco no termo casa com qualquer
+        sequência de espaço em branco no texto. O resto é comparado
+        literalmente: isto continua sendo busca exata, não difusa. Um termo
+        errado não passa a casar com nada parecido.
+        """
+        partes = [re.escape(p) for p in termo.split() if p]
+        if not partes:
+            return []
+        padrao = re.compile(r"\s+".join(partes))
+        return [(m.start(), m.end()) for m in padrao.finditer(texto)]
 
     def remover_span(self, span_id: str) -> None:
         """Apaga um span que o usuário criou.
