@@ -363,7 +363,12 @@ function redesenhar() {
        * ele mandou tarjar; clicar é desfazer. Desligar deixava um retângulo
        * tracejado no lugar, e a leitura correta disso é "não saiu". */
       caixa.addEventListener("click", () =>
-        s.origem === "usuario" ? removerSpan(s.id) : alternar(s.id, !s.ativo)
+        s.origem === "usuario"
+          ? removerSpan(s.id)
+          : // Alterna o efeito **visível**, não o campo interno. Alternar
+            // `ativo` deixava o clique sem efeito sempre que a política da
+            // classe fosse `manter`, porque as duas condições eram um E.
+            alternar(s.id, !s.sera_tarjado)
       );
       camada.appendChild(caixa);
     }

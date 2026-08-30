@@ -63,8 +63,24 @@ class SpanUI:
     end: int
     valor: str
     origem: str = "detector"  # "detector" | "usuario"
-    ativo: bool = True
     nota: str | None = None
+
+    # Decisão do usuário sobre **este** trecho, em três estados:
+    #
+    #   None   segue a política da entidade (o padrão)
+    #   True   tarja, mesmo que a política da classe diga para manter
+    #   False  não tarja, mesmo que a política da classe diga para tarjar
+    #
+    # Era um booleano com padrão `True`, e `sera_tarjado` era
+    # `ativo AND política == tarja` — duas chaves em série. O efeito é que,
+    # quando a política da entidade é `manter`, a chave do span perde toda a
+    # autoridade: clicar no retângulo alternava `ativo` sem mudar nada na
+    # tela. Num documento com 31 datas detectadas e preservadas por política,
+    # eram 31 retângulos tracejados em que clicar não fazia efeito nenhum.
+    #
+    # Com três estados, o clique sempre tem consequência visível, e a
+    # intenção explícita sobre um trecho vence o padrão da classe.
+    ativo: bool | None = None
 
     def para_span(self) -> Span:
         return Span(start=self.start, end=self.end, entity=self.entity, score=self.score)
@@ -95,19 +111,21 @@ class Sessao:
             return TARJA
         return self.perfil.operador_de(entidade)
 
-    def spans_ativos(self) -> list[SpanUI]:
-        """Os spans que de fato serão tarjados.
+    def sera_tarjado(self, s: SpanUI) -> bool:
+        """Único lugar que decide se um trecho vai virar tarja.
 
-        Duas condições independentes, e as duas precisam valer: o span não foi
-        desligado individualmente, **e** a política manda tarjar a classe dele.
-        Separadas de propósito — desligar `PERSON` inteiro e desligar um nome
-        específico são intenções diferentes.
+        A decisão explícita sobre o trecho vence o padrão da classe. Sem essa
+        precedência, desligar `DATE_TIME` inteiro tornaria impossível tarjar
+        *uma* data específica — e o inverso também: com a classe ligada, não
+        haveria como poupar um caso pontual.
         """
-        return [
-            s
-            for s in self.spans.values()
-            if s.ativo and self.operador_de(s.entity) == TARJA
-        ]
+        if s.ativo is not None:
+            return s.ativo
+        return self.operador_de(s.entity) == TARJA
+
+    def spans_ativos(self) -> list[SpanUI]:
+        """Os spans que de fato serão tarjados."""
+        return [s for s in self.spans.values() if self.sera_tarjado(s)]
 
     def inventario(self) -> dict[str, int]:
         """Contagem por entidade, **incluindo as que não apareceram**.
@@ -345,7 +363,27 @@ class Sessao:
         return len(ids)
 
     def aplicar_perfil(self, perfil: PerfilPolitica) -> None:
+        """Aplica a política e **devolve a classe alterada ao padrão dela**.
+
+        Sem isso a caixa de seleção da entidade deixaria de ser confiável:
+        desmarcá-la ainda deixaria tarjados os trechos daquela classe que o
+        usuário tinha ligado um a um antes, e a contagem na lateral
+        contradiria o que a tela mostra.
+
+        A regra fica assim: a caixa define o padrão da classe e zera as
+        exceções; o clique no retângulo cria uma exceção a partir daí.
+        """
         validar_perfil(perfil, config.ENTIDADES_ATIVAS)
+
+        mudaram = {
+            e
+            for e in config.ENTIDADES_ATIVAS
+            if self.perfil.operador_de(e) != perfil.operador_de(e)
+        }
+        for s in self.spans.values():
+            if s.entity in mudaram and s.origem != "usuario":
+                s.ativo = None
+
         self.perfil = perfil
         self._invalidar()
         logger.info("sessao %s: perfil %r aplicado", self.doc_id, perfil.nome)
@@ -526,7 +564,7 @@ class Sessao:
             "origem": s.origem,
             "ativo": s.ativo,
             "nota": s.nota,
-            "sera_tarjado": s.ativo and self.operador_de(s.entity) == TARJA,
+            "sera_tarjado": self.sera_tarjado(s),
             "rects": [
                 {
                     "pagina": pno,

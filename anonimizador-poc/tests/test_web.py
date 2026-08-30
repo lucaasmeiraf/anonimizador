@@ -136,6 +136,98 @@ def test_perfil_padrao_preserva_organizacao(cliente, pdf):
 
 
 # --------------------------------------------------------------------------
+# O clique tem de ter efeito visível em qualquer estado
+# --------------------------------------------------------------------------
+# `sera_tarjado` era `ativo AND política == tarja` — duas chaves em série. Com
+# a política da entidade em `manter`, a chave do span perdia toda autoridade:
+# clicar no retângulo alternava `ativo` sem mudar nada na tela. Num documento
+# com 31 datas preservadas por política, eram 31 retângulos em que clicar não
+# fazia efeito nenhum.
+def test_clique_em_span_de_classe_preservada_liga_a_tarja(cliente, pdf):
+    doc = _enviar(cliente, pdf)
+    alvo = next(s for s in doc["spans"] if s["entity"] == "ORGANIZATION")
+    assert alvo["sera_tarjado"] is False, "o perfil padrão preserva ORGANIZATION"
+
+    d = cliente.patch(
+        f"/api/doc/{doc['doc_id']}/span",
+        json={"span_id": alvo["id"], "ativo": True},
+    ).json()
+    depois = next(s for s in d["spans"] if s["id"] == alvo["id"])
+    assert depois["sera_tarjado"] is True, (
+        "a decisão sobre o trecho precisa vencer o padrão da classe"
+    )
+
+
+def test_clique_alterna_nos_dois_sentidos_com_classe_preservada(cliente, pdf):
+    """Ida e volta: o estado visível acompanha cada clique."""
+    doc = _enviar(cliente, pdf)
+    alvo = next(s for s in doc["spans"] if s["entity"] == "ORGANIZATION")
+
+    vistos = []
+    for valor in (True, False, True):
+        d = cliente.patch(
+            f"/api/doc/{doc['doc_id']}/span",
+            json={"span_id": alvo["id"], "ativo": valor},
+        ).json()
+        vistos.append(next(s for s in d["spans"] if s["id"] == alvo["id"])["sera_tarjado"])
+    assert vistos == [True, False, True]
+
+
+def test_span_intocado_segue_a_politica_da_classe(cliente, pdf):
+    """O padrão continua sendo a política; a exceção é o clique."""
+    doc = _enviar(cliente, pdf)
+    for s in doc["spans"]:
+        assert s["ativo"] is None, "span recém-detectado não tem decisão própria"
+
+    d = cliente.put(
+        f"/api/doc/{doc['doc_id']}/perfil",
+        json={"nome": "x", "padrao": "tarja", "regras": {"ORGANIZATION": "tarja"}},
+    ).json()
+    org = next(s for s in d["spans"] if s["entity"] == "ORGANIZATION")
+    assert org["sera_tarjado"] is True
+
+
+def test_mudar_a_classe_zera_as_decisoes_individuais_dela(cliente, pdf):
+    """A caixa de seleção precisa continuar sendo autoridade.
+
+    Sem zerar, desmarcar a classe deixaria tarjados os trechos que o usuário
+    tinha ligado um a um antes, e a contagem na lateral contradiria a tela.
+    """
+    doc = _enviar(cliente, pdf)
+    alvo = next(s for s in doc["spans"] if s["entity"] == "ORGANIZATION")
+    cliente.patch(
+        f"/api/doc/{doc['doc_id']}/span",
+        json={"span_id": alvo["id"], "ativo": True},
+    )
+
+    # Liga a classe inteira e desliga de novo: a exceção anterior some.
+    cliente.put(
+        f"/api/doc/{doc['doc_id']}/perfil",
+        json={"nome": "x", "padrao": "tarja", "regras": {"ORGANIZATION": "tarja"}},
+    )
+    d = cliente.put(
+        f"/api/doc/{doc['doc_id']}/perfil",
+        json={"nome": "x", "padrao": "tarja", "regras": {"ORGANIZATION": "manter"}},
+    ).json()
+
+    org = next(s for s in d["spans"] if s["id"] == alvo["id"])
+    assert org["ativo"] is None
+    assert org["sera_tarjado"] is False
+
+
+def test_trecho_manual_sobrevive_a_mudanca_de_politica(cliente, pdf):
+    """O que o usuário adicionou não é proposta de classe nenhuma."""
+    doc = _enviar(cliente, pdf)
+    cliente.post(f"/api/doc/{doc['doc_id']}/termo", json={"termo": "Rua das Flores"})
+    d = cliente.put(
+        f"/api/doc/{doc['doc_id']}/perfil",
+        json={"nome": "x", "padrao": "manter", "regras": {}},
+    ).json()
+    manual = next(s for s in d["spans"] if s["origem"] == "usuario")
+    assert manual["sera_tarjado"] is True
+
+
+# --------------------------------------------------------------------------
 # Invariante 1 — o gate de download
 # --------------------------------------------------------------------------
 def test_download_recusa_antes_de_aprovar(cliente, pdf):
