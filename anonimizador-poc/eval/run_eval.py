@@ -88,15 +88,45 @@ def avaliar_config(
             if redigir:
                 saida = pasta_saida / f"{meta['doc_id']}.redigido.pdf"
                 rr = redact_document(doc, tm, spans_para_redigir(spans), saida)
-                relatorio = verify(saida, rr.valores)
+
+                # Duas perguntas diferentes, medidas separadamente.
+                #
+                # (a) VAZAMENTO DE PII — a que decide a fase. Confere os
+                #     valores do **gabarito**: se um dado pessoal real
+                #     sobrevive em qualquer vetor do PDF, é vazamento, tenha
+                #     ele sido detectado ou não.
+                #
+                # (b) RESÍDUO DE OCORRÊNCIA — diagnóstico, não gate. Confere
+                #     os valores que nós **decidimos tarjar**: se a mesma
+                #     string aparece de novo mais adiante sem tarja, alguma
+                #     ocorrência escapou.
+                #
+                # Misturar as duas era o que fazia um falso positivo em texto
+                # boilerplate ("Senhor(a") ser contado como vazamento de dado
+                # pessoal. Um falso positivo repetido é ruído de rótulo; um
+                # valor do gabarito sobrevivente é falha de segurança.
+                # Só os valores que a política manda tarjar. ORGANIZATION,
+                # LOCATION e DATE_TIME estão no gabarito para serem medidos,
+                # mas `ENTIDADES_REDIGIDAS` os preserva de propósito — em
+                # documento público o nome do órgão e a data do ato costumam
+                # ser justamente o que precisa permanecer legível. Cobrá-los
+                # aqui seria reprovar a fase por cumprir a política.
+                valores_gold = [
+                    g.value for g in alinhamento.gold
+                    if g.label in config.ENTIDADES_REDIGIDAS
+                ]
+                rel_pii = verify(saida, valores_gold)
+                rel_residuo = verify(saida, rr.valores)
                 verificacoes.append(
                     {
                         "doc_id": meta["doc_id"],
                         "spans": rr.spans_redigidos,
                         "retangulos": rr.retangulos,
                         "sem_retangulo": rr.spans_sem_retangulo,
-                        "ok": relatorio.ok,
-                        "leaks": [str(x) for x in relatorio.leaks],
+                        "ok": rel_pii.ok,
+                        "leaks": [str(x) for x in rel_pii.leaks],
+                        "residuo_ok": rel_residuo.ok,
+                        "residuos": [str(x) for x in rel_residuo.leaks],
                     }
                 )
         except Exception as exc:  # noqa: BLE001
@@ -172,24 +202,61 @@ def montar_relatorio(
     a("")
     a("Dez vetores checados por documento: texto (PyMuPDF e pdfplumber), anotações,")
     a("AcroForm, anexos, sumário, metadados, XMP, streams descomprimidos e bytes")
-    a("brutos. Um único vazamento reprova a fase.")
+    a("brutos.")
     a("")
-    a("| Configuração | Documentos | Sem vazamento | Spans sem retângulo |")
-    a("|---|---:|---:|---:|")
+    a("Duas checagens distintas, e só a primeira é gate:")
+    a("")
+    a("- **Vazamento de PII** — algum valor do *gabarito* sobreviveu no PDF final?")
+    a("  Um único caso reprova a fase.")
+    a("- **Resíduo de ocorrência** — alguma string que *decidimos tarjar* reaparece")
+    a("  sem tarja? Diagnóstico de recall dentro do documento. Quando o span tarjado")
+    a("  é um falso positivo em texto repetido (\"Senhor(a)\"), isso acusa ruído de")
+    a("  rótulo, não exposição de dado pessoal.")
+    a("")
+    a("| Configuração | Documentos | Sem vazamento de PII | Sem resíduo | Spans sem retângulo |")
+    a("|---|---:|---:|---:|---:|")
     for rc in resultados:
         v = verificacoes.get(rc.nome, [])
         ok = sum(1 for x in v if x["ok"])
+        ok_res = sum(1 for x in v if x.get("residuo_ok"))
         sem_rect = sum(len(x["sem_retangulo"]) for x in v)
         marca = "✅" if v and ok == len(v) else ("❌" if v else "—")
-        a(f"| `{rc.nome}` | {len(v)} | {ok}/{len(v)} {marca} | {sem_rect} |")
+        marca_res = "✅" if v and ok_res == len(v) else ("⚠️" if v else "—")
+        a(f"| `{rc.nome}` | {len(v)} | {ok}/{len(v)} {marca} | {ok_res}/{len(v)} {marca_res} "
+          f"| {sem_rect} |")
     a("")
     for rc in resultados:
         falhos = [x for x in verificacoes.get(rc.nome, []) if not x["ok"]]
         if falhos:
-            a(f"**Vazamentos em `{rc.nome}`:**")
+            a(f"**Vazamento de PII em `{rc.nome}` — reprova:**")
             a("")
             for x in falhos[:20]:
                 a(f"- `{x['doc_id']}`: " + "; ".join(x["leaks"][:5]))
+            a("")
+    for rc in resultados:
+        res = [x for x in verificacoes.get(rc.nome, []) if not x.get("residuo_ok")]
+        if res:
+            a(f"**Resíduos de ocorrência em `{rc.nome}` — diagnóstico:**")
+            a("")
+            for x in res[:10]:
+                a(f"- `{x['doc_id']}`: " + "; ".join(x["residuos"][:3]))
+            a("")
+
+    # ---- erros de execucao ----------------------------------------------
+    # Sem esta secao, 50 documentos falhando aparecem so como uma coluna
+    # "Erros | 50" no meio de uma tabela de latencia, o que e facil de nao ver.
+    if any(rc.erros for rc in resultados):
+        a("## Erros de execucao")
+        a("")
+        for rc in resultados:
+            if not rc.erros:
+                continue
+            a(f"**`{rc.nome}` — {len(rc.erros)} documento(s) com erro:**")
+            a("")
+            for e in rc.erros[:5]:
+                a(f"- `{e}`")
+            if len(rc.erros) > 5:
+                a(f"- ... e mais {len(rc.erros) - 5}")
             a("")
 
     # ---- detalhamento ----------------------------------------------------
