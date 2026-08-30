@@ -117,6 +117,7 @@ async def criar_doc(arquivo: UploadFile = File(...)) -> dict:
             start=sp.start,
             end=sp.end,
             valor=sp.text_of(sessao.tm.text),
+            nota=sp.nota,
         )
     logger.info("sessao %s: %d spans detectados", sessao.doc_id, len(detectados))
     return sessao.to_dict()

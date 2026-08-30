@@ -299,6 +299,52 @@ def _colunas_pessoas(
     doc.add_colunas(X_COLUNAS_2, [coluna(titulo_esq), coluna(titulo_dir)])
 
 
+def _anexo_checksum_invalido(
+    doc: Documento, fake: Faker, rng: random.Random
+) -> None:
+    """Bloco com identificadores de forma correta e **checksum inválido**.
+
+    Documento real vem cheio deles: minuta e modelo usam "CPF fictício",
+    ficha preenchida à mão tem dígito trocado, PDF vindo de OCR troca 8 por 3.
+    Enquanto o corpus só teve identificador válido, o comportamento do
+    pipeline diante desses números nunca foi medido — e ele é o oposto do
+    intuitivo: o candidato é **descartado**, não rebaixado, então nem a
+    palavra-âncora imediatamente anterior o salva.
+
+    Os dois casos entram separados de propósito, porque decidem coisas
+    diferentes:
+
+    * **com âncora** (``CPF: 123.456.789-00``) — o texto declara o que o
+      número é. Deixar de tarjar aqui é falso negativo claro.
+    * **sem âncora** — só a forma. Tarjar aqui é decisão de risco, e o custo
+      dela precisa aparecer na precisão, não numa suposição.
+
+    Todos entram no gabarito com o rótulo verdadeiro: são o dado pessoal que
+    o documento carrega, tenha o DV fechado ou não.
+    """
+    doc.blank()
+    doc.add("ANEXO — CADASTROS COM INCONSISTÊNCIA DE DÍGITO VERIFICADOR")
+    doc.add("Registros recebidos de sistema legado, pendentes de conferência.")
+    doc.blank()
+
+    # Com âncora explícita imediatamente antes do valor.
+    doc.add("Requerente: ", (fake.name(), "PERSON"),
+            " — CPF: ", (fakes.fake_cpf_invalido(rng), "CPF"))
+    doc.add("Empresa contratada — CNPJ: ",
+            (fakes.fake_cnpj_invalido(rng), "CNPJ"))
+    doc.add("Condutor autuado, CNH nº ", (fakes.fake_cnh_invalida(rng), "CNH"))
+
+    # Sem âncora: o número aparece sozinho numa célula de tabela, com o rótulo
+    # apenas no cabeçalho da coluna — fora da janela de 40 caracteres que a
+    # desambiguação olha para trás. É o caso que a tabela real produz.
+    doc.add_tabela(X_TABELA_3, [
+        ["INTERESSADO", "DOCUMENTO", "SITUAÇÃO"],
+        [(fake.name(), "PERSON"), (fakes.fake_cpf_invalido(rng), "CPF"), "pendente"],
+        [(fake.name(), "PERSON"), (fakes.fake_cpf_invalido(rng), "CPF"), "pendente"],
+    ])
+    doc.blank()
+
+
 def _clausulas(doc: Documento, fake: Faker, n: int, prefixo: str) -> None:
     """Volume de prosa para o documento passar de uma pagina."""
     for i in range(n):
@@ -558,6 +604,12 @@ def gerar_corpus(destino: Path, n: int, semente: int) -> dict:
         doc_id = f"{genero}-{i:03d}"
         d = Documento(doc_id, genero)
         GERADORES[genero](d, fake, rng)
+        # Um documento em cada três carrega identificadores com DV inválido.
+        # Não em todos, para que as métricas dos identificadores válidos
+        # continuem legíveis; não em nenhum, como era, porque aí o caminho
+        # simplesmente não é medido.
+        if i % 3 == 0:
+            _anexo_checksum_invalido(d, fake, rng)
         d = quebrar_linhas(d)
 
         texto, gabarito = montar_texto(d)

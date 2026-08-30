@@ -10,3 +10,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.egg-info/
+
+# Saidas de anonimizacao geradas em testes
+*.anonimizado.pdf

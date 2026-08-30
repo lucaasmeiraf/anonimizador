@@ -64,6 +64,7 @@ class SpanUI:
     valor: str
     origem: str = "detector"  # "detector" | "usuario"
     ativo: bool = True
+    nota: str | None = None
 
     def para_span(self) -> Span:
         return Span(start=self.start, end=self.end, entity=self.entity, score=self.score)
@@ -109,10 +110,25 @@ class Sessao:
         ]
 
     def inventario(self) -> dict[str, int]:
-        inv: dict[str, int] = {}
+        """Contagem por entidade, **incluindo as que não apareceram**.
+
+        Listar só o que foi detectado transforma duas coisas muito diferentes
+        na mesma ausência na tela: "procurei CPF e não há nenhum neste
+        documento" e "não sei procurar CPF". O usuário não tem como
+        distinguir, e a leitura natural da tela é a segunda.
+
+        Com a contagem zero explícita, o ponto cego fica visível. É o mesmo
+        princípio do `report.md`: o número que não existe precisa aparecer
+        como zero, não como silêncio.
+        """
+        inv: dict[str, int] = {e: 0 for e in config.ENTIDADES_ATIVAS}
         for s in self.spans.values():
             inv[s.entity] = inv.get(s.entity, 0) + 1
-        return dict(sorted(inv.items(), key=lambda kv: (-kv[1], kv[0])))
+        # Detectadas primeiro, por volume; as zeradas depois, em ordem
+        # alfabética, para não competirem por atenção com o que importa.
+        return dict(
+            sorted(inv.items(), key=lambda kv: (kv[1] == 0, -kv[1], kv[0]))
+        )
 
     # -- edição -----------------------------------------------------------
     def _novo_id(self) -> str:
@@ -407,6 +423,7 @@ class Sessao:
             "valor": s.valor,
             "origem": s.origem,
             "ativo": s.ativo,
+            "nota": s.nota,
             "sera_tarjado": s.ativo and self.operador_de(s.entity) == TARJA,
             "rects": [
                 {

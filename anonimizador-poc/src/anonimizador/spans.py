@@ -23,6 +23,15 @@ class Span:
     end: int
     entity: str
     score: float
+    # Por que este trecho foi apontado, quando a evidencia nao e o checksum.
+    # `None` = caminho normal. `"checksum_invalido"` = forma correta com
+    # digito verificador errado, aceito por mascara ou ancora.
+    #
+    # Existe para a interface poder dizer ao revisor o que ela sabe e o que
+    # ela supoe. Sem essa distincao um palpite chega na tela com a mesma cara
+    # de uma certeza matematica, e o revisor perde a unica informacao que
+    # torna a revisao dele util.
+    nota: str | None = None
 
     @property
     def length(self) -> int:

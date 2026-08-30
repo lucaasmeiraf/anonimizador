@@ -244,6 +244,12 @@ header {
 .tarja.desligada { background: transparent; border: 1.5px dashed #b03a35; }
 .tarja.manual { background: #123a6b; }
 
+/* Detectado pela forma, com dígito verificador inválido. A borda âmbar diz
+   "olhe para este" sem tirar a tarja: o valor continua coberto, mas o revisor
+   sabe que a evidência aqui é mais fraca que um checksum fechado. */
+.tarja.suspeita { box-shadow: 0 0 0 1.5px #c98a1a; }
+.tarja.suspeita.desligada { border-color: #c98a1a; }
+
 /* Camada de texto selecionável, por cima da imagem da página.
    O texto é transparente: a imagem é que o usuário vê. O que esta camada
    entrega é seleção e Ctrl+C nativos do navegador, que uma imagem não tem. */
@@ -367,6 +373,13 @@ header {
 #inventario .nome { flex: 1; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; }
 #inventario .qtd { color: var(--suave); font-variant-numeric: tabular-nums; }
 
+/* Entidade que a política cobre e que não apareceu neste documento. Presente
+   e esmaecida: "olhei e não achei" tem de ser distinguível de "não sei
+   procurar isso", e as duas somem da tela do mesmo jeito se a linha não
+   existir. */
+#inventario li.vazia { opacity: .45; }
+#inventario li.vazia .qtd { font-style: italic; }
+
 .linha { display: flex; gap: 6px; }
 .linha input { flex: 1; min-width: 0; }
 
@@ -473,6 +486,73 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 #resultado .ocorrencia .onde { font-size: 12px; color: var(--suave); margin-top: 3px; }
 #resultado .ocorrencia button { width: 100%; margin-top: 6px; }
 #resultado .estrutural { border-left: 3px solid var(--falha); }
+
+/* -------------------------------------------------------------- modal */
+#modal-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 20, 18, .48);
+  animation: aparecer .12s ease-out;
+}
+
+#modal {
+  width: 100%;
+  max-width: 440px;
+  background: var(--papel);
+  border-radius: 12px;
+  padding: 22px 24px 18px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .3);
+  animation: subir .15s ease-out;
+}
+
+#modal h3 { margin: 0 0 12px; font-size: 17px; font-weight: 650; }
+#modal-corpo { font-size: 13.5px; line-height: 1.55; color: var(--suave); }
+#modal-corpo p { margin: 0 0 8px; }
+#modal-corpo ul { margin: 0 0 10px; padding-left: 20px; }
+#modal-corpo li { margin-bottom: 3px; }
+
+#modal-corpo .alerta {
+  margin-top: 12px;
+  padding: 9px 11px;
+  background: #fdf3f2;
+  border-left: 3px solid var(--falha);
+  border-radius: 0 5px 5px 0;
+  color: #7e2420;
+  font-size: 12.5px;
+}
+
+.modal-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.perigo {
+  background: var(--falha);
+  border-color: var(--falha);
+  color: #fff;
+  font-weight: 600;
+}
+.perigo:hover { background: #8c1e1a; border-color: #8c1e1a; }
+
+/* O foco visível importa mais aqui do que em qualquer outro botão: a ação é
+   irreversível e o teclado precisa deixar claro onde está. */
+#modal button:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+@keyframes aparecer { from { opacity: 0; } }
+@keyframes subir {
+  from { opacity: 0; transform: translateY(8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #modal-fundo, #modal { animation: none; }
+}
 
 .limitacoes summary { cursor: pointer; font-size: 13px; font-weight: 600; }
 .limitacoes ul { margin: 10px 0 0; padding-left: 18px; color: var(--suave); font-size: 12px; }

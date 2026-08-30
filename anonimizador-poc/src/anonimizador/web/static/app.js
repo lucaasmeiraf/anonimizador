@@ -140,19 +140,28 @@ function montarPaginas(container, comTarjas) {
     img.loading = "lazy";
     div.appendChild(img);
 
-    // Camada de texto selecionável, nos dois painéis. É o que permite o
-    // Ctrl+C do usuário — a página é uma imagem e imagem não tem texto.
-    const texto = document.createElement("div");
-    texto.className = "camada-texto";
-    div.appendChild(texto);
-    carregarTexto(p, texto);
-
     if (comTarjas) {
+      // Camada de texto selecionável **só no painel Anonimizado**.
+      //
+      // Antes existia nos dois, e isso confundia: o usuário selecionava à
+      // esquerda para agir sobre o que aparece à direita. Aqui a seleção e o
+      // efeito ficam no mesmo lugar — você seleciona o que *ainda* está
+      // legível e manda tarjar.
+      //
+      // Consequência aceita: o painel Original deixa de ter Ctrl+C, e texto
+      // sob uma tarja não é selecionável, porque o retângulo intercepta o
+      // mouse. Este segundo caso é o comportamento correto: aquele trecho já
+      // está tarjado.
+      const texto = document.createElement("div");
+      texto.className = "camada-texto";
+      div.appendChild(texto);
+      carregarTexto(p, texto);
+
+      // As caixas são posicionadas em % da página, então não dependem de a
+      // imagem já ter carregado nem de reposicionar no resize.
       const camada = document.createElement("div");
       camada.className = "camada-tarjas";
       div.appendChild(camada);
-      // As caixas são posicionadas em % da página, então não dependem de a
-      // imagem já ter carregado nem de reposicionar no resize.
     }
 
     const rotulo = document.createElement("div");
@@ -227,11 +236,20 @@ function redesenhar() {
       caixa.className = "tarja";
       if (!s.sera_tarjado) caixa.classList.add("desligada");
       if (s.origem === "usuario") caixa.classList.add("manual");
+      // Detectado pela forma, não pelo dígito verificador. É palpite forte,
+      // não certeza matemática, e o revisor precisa saber a diferença.
+      if (s.nota === "checksum_invalido") caixa.classList.add("suspeita");
       caixa.style.left = (100 * r.x0) / pagina.largura + "%";
       caixa.style.top = (100 * r.y0) / pagina.altura + "%";
       caixa.style.width = (100 * (r.x1 - r.x0)) / pagina.largura + "%";
       caixa.style.height = (100 * (r.y1 - r.y0)) / pagina.altura + "%";
-      caixa.title = `${s.entity} · ${s.sera_tarjado ? "será tarjado" : "NÃO será tarjado"}`;
+      const porque =
+        s.nota === "checksum_invalido"
+          ? " · forma válida, dígito verificador inválido — confira"
+          : "";
+      caixa.title =
+        `${s.entity} · ${s.sera_tarjado ? "será tarjado" : "NÃO será tarjado"}` +
+        porque;
       caixa.dataset.spanId = s.id;
       caixa.addEventListener("click", () => alternar(s.id, !s.ativo));
       camada.appendChild(caixa);
@@ -291,26 +309,41 @@ function montarListaManuais() {
   }
 }
 
+/* Inventário.
+ *
+ * Mostra **todas** as entidades que a política cobre, inclusive as que não
+ * apareceram. Listar só o que foi detectado fazia "procurei e não há" parecer
+ * igual a "não sei procurar" — as duas somem da tela do mesmo jeito, e a
+ * leitura natural é a segunda. Com a linha zerada visível, o usuário vê que a
+ * ferramenta olhou. */
 function montarInventario() {
   const ul = $("inventario");
   ul.innerHTML = "";
 
   const porEntidade = {};
+  // O inventário do servidor já traz as zeradas; os spans dão os tarjados.
+  for (const [entidade, total] of Object.entries(doc.inventario || {})) {
+    porEntidade[entidade] = { total, tarjados: 0 };
+  }
   for (const s of doc.spans) {
     const e = (porEntidade[s.entity] ||= { total: 0, tarjados: 0 });
-    e.total += 1;
     if (s.sera_tarjado) e.tarjados += 1;
   }
 
   for (const [entidade, c] of Object.entries(porEntidade)) {
+    const vazia = c.total === 0;
     const li = document.createElement("li");
+    if (vazia) li.className = "vazia";
 
     const chk = document.createElement("input");
     chk.type = "checkbox";
     chk.checked = c.tarjados > 0;
-    chk.disabled = entidade === "MANUAL";
-    chk.title =
-      entidade === "MANUAL"
+    // Sem ocorrência não há o que ligar; MANUAL é sempre tarjado por ser
+    // intenção explícita do usuário.
+    chk.disabled = vazia || entidade === "MANUAL";
+    chk.title = vazia
+      ? "nenhuma ocorrência encontrada neste documento"
+      : entidade === "MANUAL"
         ? "trechos que você apontou; sempre tarjados"
         : "ligar/desligar a classe inteira";
     chk.addEventListener("change", () => alternarEntidade(entidade, chk.checked));
@@ -321,7 +354,7 @@ function montarInventario() {
 
     const qtd = document.createElement("span");
     qtd.className = "qtd";
-    qtd.textContent = `${c.tarjados}/${c.total}`;
+    qtd.textContent = vazia ? "—" : `${c.tarjados}/${c.total}`;
 
     li.append(chk, nome, qtd);
     ul.appendChild(li);
@@ -581,12 +614,96 @@ function mostrarResultado() {
   r.classList.remove("hidden");
 }
 
-// ------------------------------------------------------------------ resto
-$("btn-descartar").addEventListener("click", async () => {
-  if (!confirm("Apagar o documento e todos os arquivos desta sessão?")) return;
-  await fetch(`/api/doc/${doc.doc_id}`, { method: "DELETE" });
-  location.reload();
+// -------------------------------------------------------------- descarte
+/* Modal próprio no lugar do `confirm()`.
+ *
+ * Não é só estética: o diálogo do navegador não permite explicar **o que**
+ * está sendo destruído, e aqui a ação apaga o original, a proposta e o PDF
+ * gerado, sem volta. Quem confirma precisa saber disso. */
+const modalFundo = $("modal-fundo");
+let focoAnterior = null;
+
+function abrirModal() {
+  focoAnterior = document.activeElement;
+  modalFundo.classList.remove("hidden");
+  // Foco no botão seguro: Enter sem ler não pode destruir a sessão.
+  $("modal-cancelar").focus();
+  document.addEventListener("keydown", teclaNoModal);
+}
+
+function fecharModal() {
+  modalFundo.classList.add("hidden");
+  document.removeEventListener("keydown", teclaNoModal);
+  focoAnterior?.focus();
+}
+
+function teclaNoModal(e) {
+  if (e.key === "Escape") return fecharModal();
+  if (e.key !== "Tab") return;
+  // Prende o Tab dentro do modal: sair dele com o teclado deixaria o usuário
+  // navegando numa tela que está inerte atrás da sobreposição.
+  const foco = [$("modal-cancelar"), $("modal-confirmar")];
+  const i = foco.indexOf(document.activeElement);
+  if (i === -1) return;
+  e.preventDefault();
+  foco[(i + (e.shiftKey ? foco.length - 1 : 1)) % foco.length].focus();
+}
+
+$("btn-descartar").addEventListener("click", abrirModal);
+$("modal-cancelar").addEventListener("click", fecharModal);
+
+// Clique na sobreposição cancela; clique dentro do cartão, não.
+modalFundo.addEventListener("click", (e) => {
+  if (e.target === modalFundo) fecharModal();
 });
+
+$("modal-confirmar").addEventListener("click", async () => {
+  const btn = $("modal-confirmar");
+  btn.disabled = true;
+  btn.textContent = "Descartando…";
+  try {
+    // Espera o servidor confirmar que apagou **antes** de limpar a tela. Com
+    // `location.reload()` a tela voltava ao início sem garantia nenhuma de
+    // que os arquivos tinham sumido.
+    const r = await fetch(`/api/doc/${doc.doc_id}`, { method: "DELETE" });
+    if (!r.ok && r.status !== 404) throw new Error("o servidor recusou apagar");
+    fecharModal();
+    voltarAoInicio();
+  } catch (e) {
+    // Erro dentro do próprio modal: um `alert()` aqui traria de volta a caixa
+    // do navegador que este modal existe para substituir.
+    const alerta = $("modal-corpo").querySelector(".alerta");
+    alerta.textContent = `Não foi possível descartar: ${e.message}. Os arquivos continuam no servidor.`;
+  } finally {
+    btn.textContent = "Descartar";
+    btn.disabled = false;
+  }
+});
+
+/* Volta à tela inicial sem recarregar a página: o modelo já está carregado no
+ * servidor e o recarregamento só adicionaria um piscar. */
+function voltarAoInicio() {
+  doc = null;
+  esconderBalao();
+  window.getSelection()?.removeAllRanges();
+
+  $("rolagem-esq").innerHTML = "";
+  $("rolagem-dir").innerHTML = "";
+  $("inventario").innerHTML = "";
+  $("lista-manuais").innerHTML = "";
+  $("manuais").classList.add("hidden");
+  $("termo").value = "";
+  $("aviso-termo").classList.add("hidden");
+  limparResultado();
+
+  $("tela-revisao").classList.add("hidden");
+  $("cabecalho-doc").classList.add("hidden");
+  $("tela-upload").classList.remove("hidden");
+  $("zona").classList.remove("hidden");
+  $("erro-upload").classList.add("hidden");
+  $("arquivo").value = "";
+  window.scrollTo(0, 0);
+}
 
 /* A sincronia entre os painéis deixou de ser código.
  *

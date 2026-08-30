@@ -166,6 +166,68 @@ que corresponde ao que o cliente percebe.
 
 ---
 
+## 4-B. O ponto cego do checksum, encontrado em documento real
+
+Registrado aqui porque contradiz, em parte, a conclusão da seção 1.
+
+A Fase 0 afirmou que os identificadores com checksum estavam **resolvidos** —
+F1 estrito 1.000, zero falso positivo, independente do modelo. Isso continua
+verdade para o que foi medido. O que não estava medido era o caso em que o
+dígito verificador **não fecha**.
+
+Quatro PDFs de teste reais foram processados em 2026-08-30:
+
+| Documento | Padrões com forma de CPF | Checksum válido | Detectados |
+|---|---:|---:|---:|
+| `Contrato_..._4P` | 13 | **0** | 0 |
+| `Processo_SEI_..._4P` | 11 | **0** | 0 |
+| `documento_..._01_contrato` | 6 | **0** | 0 |
+| `documento_..._02_sei` | 5 | **0** | 0 |
+
+**35 números com forma de CPF, nenhum detectado.** Os documentos diziam, em
+texto, `CPF fictício nº`. A CNH do segundo documento passou pelo mesmo
+caminho.
+
+O mecanismo: `ChecksumRecognizer.validate_result` devolvia `False` quando o
+mod-11 falhava, e `False` no Presidio significa **descartar**. O candidato
+morria antes de o enriquecedor de contexto olhar a palavra `CPF:`
+imediatamente anterior.
+
+> O corpus sintético não podia ter encontrado isso, e a razão é a mesma da
+> seção 2: ele só gerava identificador **válido**. Um caminho que o corpus não
+> exercita é um caminho sobre o qual o `report.md` é silencioso — e silêncio,
+> de novo, foi lido como ausência de problema.
+
+Isso importa fora do documento de teste: 23 dos 35 tinham âncora explícita, e
+o caso real equivalente é ficha com dígito trocado, minuta com identificador
+fictício e PDF vindo de OCR. Nos três o número continua sendo dado pessoal.
+
+O conserto está em `recognizers/base.py` (três níveis de evidência) e o corpus
+passou a gerar identificadores com DV inválido, ancorados e em célula de
+tabela sem âncora, para que o caminho seja **medido** em vez de suposto.
+
+### O que a mudança custou: nada
+
+Afrouxar o reconhecedor com o melhor número do projeto exigia medição, não
+intuição. Rodada de 2026-08-30, corpus com 51 CPFs de DV inválido no gabarito:
+
+| Entidade | Suporte (antes → depois) | Precisão | Recall | F1 estrito | FP |
+|---|---|---:|---:|---:|---:|
+| CPF | 660 → **711** | 1.000 | 1.000 | 1.000 | **0** |
+| CNPJ | 44 → 47 | 1.000 | 1.000 | 1.000 | **0** |
+| CNH | 20 → 27 | 1.000 | 1.000 | 1.000 | **0** |
+
+Os identificadores com DV inválido entraram no suporte e foram **todos**
+detectados, com fronteiras exatas, sem introduzir um único falso positivo. O
+que segura a precisão é o quarto nível: forma crua, sem âncora e sem checksum
+continua descartada — número de nota fiscal e de protocolo seguem ignorados.
+
+Confirmado no documento real que originou o achado: os 5 CPFs do
+`documento_..._02_sei` passaram a ser detectados e tarjados, marcados como
+`checksum_invalido`. RG e CNPJ do mesmo documento também, pelo mesmo motivo.
+
+---
+
 ## 5. O que continua sem medição
 
 Registrado aqui para não virar suposição de que está coberto.
@@ -176,6 +238,7 @@ Registrado aqui para não virar suposição de que está coberto.
 | Latência em documento de dezenas/centenas de páginas | Corpus tem 3 páginas | 0.53 s/página com transformer extrapola para ~53 s num documento de 100 páginas, mas é extrapolação de 3 pontos |
 | Identificador indireto por contexto | Não está no gabarito | A cobertura de caracteres é **silenciosa** sobre esse risco, não tranquilizadora. Ver `05-politica-llm.md`, seção 3.2 |
 | PDF escaneado / OCR | Fora do escopo da Fase 0 | Nada aqui vale para documento em imagem |
+| ~~Identificador com checksum inválido~~ | ~~o corpus só gerava válidos~~ | **medido a partir de 2026-08-30 — ver seção 4-B** |
 | Documento real de cliente | Proibido nesta fase (RS-01) | Todos os números valem sobre corpus sintético |
 
 ---

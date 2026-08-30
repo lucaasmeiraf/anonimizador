@@ -23,6 +23,9 @@ __all__ = [
     "fake_pis",
     "fake_cnh",
     "fake_titulo_eleitor",
+    "fake_cpf_invalido",
+    "fake_cnpj_invalido",
+    "fake_cnh_invalida",
     "fake_processo_cnj",
     "fake_rg_sp",
     "fake_cep",
@@ -157,3 +160,41 @@ def fake_telefone(rng: random.Random, celular: bool = True) -> str:
         return f"({ddd}) {num[0:5]}-{num[5:]}"
     num = f"{rng.randint(2000, 5999):04d}{rng.randint(0, 9999):04d}"
     return f"({ddd}) {num[0:4]}-{num[4:]}"
+
+
+# --------------------------------------------------------------------------
+# Identificadores com checksum INVÁLIDO
+# --------------------------------------------------------------------------
+# Não são um capricho: documento real vem cheio deles. Modelo de contrato,
+# material de treinamento e minuta usam "CPF fictício nº 123.456.789-00"; ficha
+# preenchida à mão tem dígito trocado; PDF vindo de OCR troca 8 por 3.
+#
+# O reconhecedor da Fase 0 descarta tudo isso — `validate_result` devolve
+# `False` e o Presidio joga o candidato fora antes mesmo do enriquecedor de
+# contexto olhar a palavra "CPF" logo antes. O número fica legível no PDF
+# "anonimizado".
+#
+# Enquanto o corpus só teve identificador válido, esse caminho nunca foi
+# medido, e qualquer mudança nele seria feita no escuro. Estes geradores
+# existem para que ele passe a ser.
+
+
+def _quebrar_dv(digits: str) -> str:
+    """Troca o último dígito por outro, invalidando o checksum."""
+    ultimo = int(digits[-1])
+    return digits[:-1] + str((ultimo + 1) % 10)
+
+
+def fake_cpf_invalido(rng: random.Random, masked: bool = True) -> str:
+    """CPF com forma correta e DV errado — o "CPF fictício" dos modelos."""
+    digits = _quebrar_dv(fake_cpf(rng, masked=False))
+    return _fmt(digits, "###.###.###-##") if masked else digits
+
+
+def fake_cnpj_invalido(rng: random.Random, masked: bool = True) -> str:
+    digits = _quebrar_dv(fake_cnpj(rng, masked=False))
+    return _fmt(digits, "##.###.###/####-##") if masked else digits
+
+
+def fake_cnh_invalida(rng: random.Random) -> str:
+    return _quebrar_dv(fake_cnh(rng))

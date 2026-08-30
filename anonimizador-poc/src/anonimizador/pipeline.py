@@ -92,7 +92,17 @@ class DetectionPipeline:
             score_threshold=self.score_threshold,
         )
         spans = [
-            Span(r.start, r.end, r.entity_type, float(r.score))
+            Span(
+                r.start,
+                r.end,
+                r.entity_type,
+                float(r.score),
+                nota=(
+                    "checksum_invalido"
+                    if (r.recognition_metadata or {}).get("checksum") == "invalido"
+                    else None
+                ),
+            )
             for r in brutos
             if r.end > r.start
         ]

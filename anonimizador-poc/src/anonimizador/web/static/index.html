@@ -163,6 +163,31 @@
   <button id="balao-tarjar">Tarjar</button>
 </div>
 
+<!-- Confirmação de descarte. Substitui o `confirm()` do navegador, que além de
+     destoar da interface não permite explicar o que está sendo destruído. -->
+<div id="modal-fundo" class="hidden">
+  <div id="modal" role="alertdialog" aria-modal="true"
+       aria-labelledby="modal-titulo" aria-describedby="modal-corpo">
+    <h3 id="modal-titulo">Descartar este documento?</h3>
+    <div id="modal-corpo">
+      <p>Serão apagados do servidor, agora:</p>
+      <ul>
+        <li>o PDF original que você enviou</li>
+        <li>a proposta de tarjas e as suas correções</li>
+        <li>o PDF anonimizado, se já tiver sido gerado</li>
+      </ul>
+      <p class="alerta">
+        A ação é irreversível e a sessão não pode ser recuperada. Se ainda não
+        baixou o arquivo anonimizado, ele será perdido.
+      </p>
+    </div>
+    <div class="modal-acoes">
+      <button id="modal-cancelar" class="secundario">Cancelar</button>
+      <button id="modal-confirmar" class="perigo">Descartar</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>
