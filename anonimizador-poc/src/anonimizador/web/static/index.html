@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anonimizador — revisão</title>
+<link rel="stylesheet" href="/static/estilo.css">
+</head>
+<body>
+
+<header>
+  <div class="marca">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z"
+            fill="none" stroke="currentColor" stroke-width="1.7"
+            stroke-linejoin="round"/>
+      <rect x="8" y="10.5" width="8" height="2.4" rx=".5" fill="currentColor"/>
+      <rect x="9.5" y="14.4" width="5" height="2.4" rx=".5" fill="currentColor"/>
+    </svg>
+    <div>
+      <span class="nome-produto">Anonimizador</span>
+      <span class="fase">revisão assistida · LGPD</span>
+    </div>
+  </div>
+  <div id="cabecalho-doc" class="hidden">
+    <span id="nome-arquivo"></span>
+    <button id="btn-descartar" class="secundario">Descartar documento</button>
+  </div>
+</header>
+
+<!-- ------------------------------------------------------------------ -->
+<section id="tela-upload">
+  <div class="abertura">
+
+    <div class="chamada">
+      <h2>Anonimize um documento sem tirá-lo desta máquina</h2>
+      <p class="subtitulo">
+        A detecção roda localmente. O arquivo final só é liberado depois de
+        passar por uma verificação independente em dez frentes.
+      </p>
+    </div>
+
+    <label class="zona" id="zona" for="arquivo">
+      <input type="file" id="arquivo" accept="application/pdf" hidden>
+      <svg class="icone" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 15V3m0 0L8 7m4-4 4 4" fill="none" stroke="currentColor"
+              stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M3 15v3.5A2.5 2.5 0 0 0 5.5 21h13a2.5 2.5 0 0 0 2.5-2.5V15"
+              fill="none" stroke="currentColor" stroke-width="1.6"
+              stroke-linecap="round"/>
+      </svg>
+      <div class="zona-titulo">Arraste um PDF aqui</div>
+      <div class="zona-sub">ou <span class="link">escolha um arquivo</span></div>
+      <div class="zona-meta">PDF com texto selecionável · até 50 MB</div>
+    </label>
+
+    <p id="erro-upload" class="erro hidden"></p>
+
+    <div id="carregando-upload" class="progresso hidden">
+      <span class="girando"></span>
+      <div>
+        <div class="progresso-titulo">Detectando dados pessoais…</div>
+        <div class="progresso-sub" id="progresso-sub">
+          O modelo lê o documento inteiro; alguns segundos por página.
+        </div>
+      </div>
+    </div>
+
+    <ul class="garantias">
+      <li>
+        <strong>Sem rede</strong>
+        O serviço que lê o documento roda sem rota para fora. Verificável com
+        <code>make ui-proof</code>.
+      </li>
+      <li>
+        <strong>Redação de verdade</strong>
+        O texto sai do arquivo, junto com metadados, anexos e sumário. Não é
+        um retângulo por cima.
+      </li>
+      <li>
+        <strong>Você aprova</strong>
+        Nada é gerado antes de você revisar tarja por tarja e aprovar.
+      </li>
+    </ul>
+
+    <p class="rodape-abertura">
+      Documento escaneado ainda não é suportado — sem texto no arquivo, não há
+      o que remover. <span id="modelo-ativo"></span>
+    </p>
+
+  </div>
+</section>
+
+<!-- ------------------------------------------------------------------ -->
+<main id="tela-revisao" class="hidden">
+
+  <div class="painéis">
+    <section class="painel">
+      <h2>Original</h2>
+      <div class="rolagem" id="rolagem-esq"></div>
+    </section>
+    <section class="painel">
+      <h2>Anonimizado <span class="dica">clique numa tarja para desligá-la</span></h2>
+      <div class="rolagem" id="rolagem-dir"></div>
+    </section>
+  </div>
+
+  <aside id="lateral">
+    <div class="bloco">
+      <h3>O que será tarjado</h3>
+      <ul id="inventario"></ul>
+    </div>
+
+    <div class="bloco">
+      <h3>Faltou alguma coisa?</h3>
+      <p class="ajuda">
+        Selecione o trecho no documento e copie (Ctrl+C), ou digite. Todas as
+        ocorrências entram.
+      </p>
+      <div class="linha">
+        <input type="text" id="termo" placeholder="ex.: Maria Fernanda da Mata">
+        <button id="btn-termo">Tarjar</button>
+      </div>
+      <p id="aviso-termo" class="aviso hidden"></p>
+      <div id="manuais" class="hidden">
+        <div class="rotulo-lista">Trechos que você adicionou</div>
+        <ul id="lista-manuais"></ul>
+      </div>
+    </div>
+
+    <div class="bloco" id="bloco-aprovar">
+      <button id="btn-aprovar" class="primario">Aprovar e gerar PDF</button>
+      <p class="ajuda">
+        O PDF só é gerado agora. Ele passa por verificação em 10 vetores antes
+        de ser liberado.
+      </p>
+      <div id="processando" class="hidden">
+        <span class="girando"></span> Redigindo e verificando…
+      </div>
+      <div id="resultado" class="hidden"></div>
+    </div>
+
+    <details class="bloco limitacoes">
+      <summary>O que a anonimização altera além das tarjas</summary>
+      <ul>
+        <li>Layout, paginação e fontes ficam intactos — não há refluxo.</li>
+        <li>Todos os hyperlinks são removidos, inclusive os inofensivos.</li>
+        <li>O sumário/bookmarks é apagado por inteiro.</li>
+        <li>Metadados são zerados: autor, título, data de criação, produtor.</li>
+        <li>
+          <strong>Assinatura digital é invalidada.</strong> Remover texto muda
+          os bytes assinados; não há contorno. Não testado nesta fase.
+        </li>
+      </ul>
+    </details>
+  </aside>
+
+</main>
+
+<!-- Balão que aparece sobre o texto selecionado, como um menu de contexto. -->
+<div id="balao" class="hidden" role="dialog" aria-label="Ação sobre a seleção">
+  <span id="balao-texto"></span>
+  <button id="balao-tarjar">Tarjar</button>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

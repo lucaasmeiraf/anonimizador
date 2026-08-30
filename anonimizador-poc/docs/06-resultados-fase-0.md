@@ -148,7 +148,15 @@ contra 11.
 > o gate de F1 como está no goal e aceitar `bertimbau-harem`; (b) trocar o
 > critério de recomendação para taxa de documentos sem vazamento, e levar
 > `bert-lenerbr`; (c) manter os dois gates, exigindo que a configuração
-> escolhida passe em F1 **e** lidere em não-vazamento. Nenhuma foi tomada.
+> escolhida passe em F1 **e** lidere em não-vazamento.
+
+> **Decidido em 2026-08-30 pela opção (b): `bert-lenerbr`.** Registrada como
+> D1 em `goal-fase-1.md`, com a justificativa completa. Em resumo: a interface
+> de revisão torna a assimetria decisiva — falso positivo é uma tarja sobrando,
+> que o revisor vê e desliga; falso negativo é uma tarja faltando, que ele
+> precisa notar pela ausência. O diagnóstico da seção 6 confirmou a decisão:
+> somando vazamento total e exposição parcial real, `bert-lenerbr` fica em 3
+> casos contra 17 do `bertimbau-harem`.
 
 Observação para (a): a diferença de cobertura de caracteres entre as duas
 (0.997 contra 0.983) favorece o `bertimbau`, mas cobertura é ponderada por
@@ -184,11 +192,32 @@ transformers, o que produziu vazamento de `PERSON` em `contrato-000` e
 `peticao-001` no `bertimbau-harem`. Vale investigar antes da Fase 1 se um
 reconhecedor de contexto (`Sr.`, `Sra.`, `portador(a) do`) resolve a classe.
 
+`eval/diagnostico_person.py` (`make diagnostico`) mediu isso, e a hipótese
+vale para **100% dos casos**:
+
+| Configuração | vazou — rótulo errado | vazou — **nenhum span** |
+|---|---:|---:|
+| `bert-lenerbr` | 1 | **0** |
+| `bertimbau-harem` | 14 | **0** |
+
+Em 710 entidades `PERSON` por configuração, **nenhum nome passou
+despercebido**. Todo vazamento é o mesmo defeito: o modelo viu o nome e o
+classificou como `LOCATION` (13 casos) ou `ORGANIZATION` (2) — rótulos que
+`ENTIDADES_REDIGIDAS` preserva de propósito.
+
+Isso reclassifica o problema. Não é limite de detecção; é interação entre erro
+de classificação e política de preservação, num subconjunto reconhecível —
+sobrenomes que também são topônimo. O reconhecedor de contexto é o conserto
+certo, e está registrado como D4 em `goal-fase-1.md`. O detalhe caso a caso
+sai em `eval/diagnostico-person.md`, gerado por `make diagnostico` (artefato,
+não versionado — como o `report.md`).
+
 ---
 
 ## 7. Estado do código
 
-Tudo abaixo está no diretório de trabalho e **não foi commitado**.
+Commitado e enviado ao remoto em 2026-08-30 (`a7ec970` e anteriores).
+A tabela permanece como registro do que esta rodada mudou.
 
 | Arquivo | Mudança |
 |---|---|
@@ -216,6 +245,9 @@ entidade. O contrato já existe (`politica.PerfilPolitica`), com a trava de que
 apenas `tarja` e `manter` estão implementados — `pseudonimo` e `mascara` são
 recusados por `validar_perfil` até que a reescrita de texto no PDF exista.
 
-Antes disso, a decisão da seção 4 precisa ser tomada, porque ela define qual
-configuração de NER a interface vai usar e, portanto, quanta revisão humana a
-tela precisa oferecer.
+A decisão da seção 4 foi tomada (`bert-lenerbr`) e é o que define quanta
+revisão humana a tela precisa oferecer.
+
+O escopo completo — stack, API, ciclo de vida dos dados, o conflito entre porta
+publicada e `network_mode: none`, e onde o chat entra — está em
+**`goal-fase-1.md`**.

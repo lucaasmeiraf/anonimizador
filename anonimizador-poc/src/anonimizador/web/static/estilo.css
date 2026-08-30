@@ -1,0 +1,496 @@
+:root {
+  --fundo: #f6f6f4;
+  --papel: #ffffff;
+  --borda: #d9d9d4;
+  --texto: #1c1c1a;
+  --suave: #6b6b64;
+  --acento: #1f5fa8;
+  --ok: #1f7a45;
+  --falha: #a8241f;
+  --tarja: #16161a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--fundo);
+  color: var(--texto);
+}
+
+.hidden { display: none !important; }
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 22px;
+  background: var(--papel);
+  border-bottom: 1px solid var(--borda);
+}
+
+.marca { display: flex; align-items: center; gap: 10px; }
+.marca .logo { width: 24px; height: 24px; color: var(--acento); flex: none; }
+.marca > div { display: flex; flex-direction: column; line-height: 1.25; }
+
+.nome-produto { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+.fase { color: var(--suave); font-size: 11.5px; }
+
+#cabecalho-doc { display: flex; align-items: center; gap: 12px; }
+#nome-arquivo { color: var(--suave); font-size: 13px; }
+
+/* ---------------------------------------------------------------- upload */
+#tela-upload {
+  display: flex;
+  justify-content: center;
+  padding: 56px 24px 72px;
+  /* Um respiro de cor no topo tira o ar de página não estilizada, sem custar
+     imagem nem dependência. */
+  background:
+    radial-gradient(60rem 22rem at 50% -6rem, #e8eef7 0%, transparent 70%),
+    var(--fundo);
+  min-height: calc(100vh - 47px);
+}
+
+.abertura { width: 100%; max-width: 620px; }
+
+.chamada { text-align: center; margin-bottom: 28px; }
+
+.chamada h2 {
+  margin: 0 0 10px;
+  font-size: 26px;
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.subtitulo {
+  margin: 0 auto;
+  max-width: 46ch;
+  color: var(--suave);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+/* A zona de soltar é um <label>, então clicar em qualquer parte dela abre o
+   seletor sem uma linha de JavaScript. */
+.zona {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 44px 24px;
+  background: var(--papel);
+  border: 1.5px dashed #c6c9cf;
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+
+.zona:hover { border-color: var(--acento); background: #fbfcfe; }
+.zona:focus-within { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+.zona.arrastando {
+  border-color: var(--acento);
+  background: #f2f7fd;
+  transform: scale(1.008);
+}
+
+.zona .icone { width: 34px; height: 34px; color: var(--acento); margin-bottom: 8px; }
+.zona-titulo { font-size: 16px; font-weight: 600; }
+.zona-sub { font-size: 13.5px; color: var(--suave); }
+.zona-sub .link { color: var(--acento); text-decoration: underline; }
+.zona-meta { font-size: 12px; color: #8d8d86; margin-top: 10px; }
+
+.progresso {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--papel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+}
+.progresso-titulo { font-weight: 600; font-size: 14px; }
+.progresso-sub { color: var(--suave); font-size: 12.5px; margin-top: 2px; }
+
+.garantias {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 26px 0 0;
+  padding: 0;
+}
+
+.garantias li {
+  background: var(--papel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 13px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--suave);
+}
+
+.garantias strong {
+  display: block;
+  color: var(--texto);
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.garantias code {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 11.5px;
+  background: #f1f1ed;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.rodape-abertura {
+  margin: 22px 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: #8d8d86;
+  line-height: 1.6;
+}
+
+#modelo-ativo { display: block; margin-top: 4px; }
+
+.ajuda { color: var(--suave); font-size: 13px; margin: 6px 0 16px; }
+
+@media (max-width: 640px) {
+  .garantias { grid-template-columns: 1fr; }
+  .chamada h2 { font-size: 22px; }
+}
+
+/* -------------------------------------------------------------- revisão */
+/* A página inteira rola. Antes `#tela-revisao` tinha `height: 100vh` e cada
+   painel rolava por dentro: a janela ficava travada, a lateral não tinha a
+   que "grudar", e a sincronia entre os painéis dependia de espelhar
+   `scrollTop` no JavaScript.
+
+   Com a rolagem na página, os dois painéis são colunas do mesmo grid e sobem
+   juntos por construção — a sincronia deixa de ser código e passa a ser
+   layout. E a lateral vira `sticky`, acompanhando a descida. */
+#tela-revisao {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  padding: 16px 20px 40px;
+  align-items: start;
+}
+
+.painéis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; }
+
+.painel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--papel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+}
+
+/* O cabeçalho de cada painel gruda logo abaixo do cabeçalho do produto, para
+   não se perder de qual coluna é qual ao descer o documento. */
+.painel h2 {
+  position: sticky;
+  top: 47px;
+  z-index: 3;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--papel);
+  border-bottom: 1px solid var(--borda);
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dica { font-weight: 400; color: var(--suave); font-size: 12px; }
+
+.rolagem { padding: 12px; background: #eceae6; border-radius: 0 0 8px 8px; }
+
+.pagina { position: relative; margin: 0 auto 12px; width: fit-content; }
+.pagina img { display: block; width: 100%; height: auto; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.pagina .rotulo-pagina {
+  text-align: center; font-size: 11px; color: var(--suave); padding: 4px 0;
+}
+
+.camada-tarjas { position: absolute; inset: 0; }
+
+.tarja {
+  position: absolute;
+  background: var(--tarja);
+  cursor: pointer;
+  border-radius: 1px;
+}
+.tarja:hover { outline: 2px solid var(--acento); outline-offset: 1px; }
+
+/* Span desligado: contorno tracejado, sem preenchimento — o texto reaparece,
+   que é exatamente o que o revisor precisa enxergar antes de aprovar. */
+.tarja.desligada { background: transparent; border: 1.5px dashed #b03a35; }
+.tarja.manual { background: #123a6b; }
+
+/* Camada de texto selecionável, por cima da imagem da página.
+   O texto é transparente: a imagem é que o usuário vê. O que esta camada
+   entrega é seleção e Ctrl+C nativos do navegador, que uma imagem não tem. */
+.camada-texto {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  /* Fica abaixo das tarjas para que o clique na tarja continue funcionando. */
+  z-index: 1;
+}
+
+.camada-texto span {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  transform-origin: 0 0;
+  cursor: text;
+}
+
+/* O realce da seleção é o **único** retorno visual que o usuário tem: o texto
+   é transparente, então sem isto ele seleciona às cegas. Opaco o bastante
+   para se ver sobre a imagem da página. */
+.camada-texto span::selection { background: rgba(31, 95, 168, .38); }
+.camada-texto span::-moz-selection { background: rgba(31, 95, 168, .38); }
+
+.camada-tarjas { z-index: 2; }
+
+/* ------------------------------------------------- balão sobre a seleção */
+/* Aparece ancorado ao trecho selecionado, como um menu de contexto. Antes a
+   ação vivia num botão na lateral: o usuário selecionava aqui e tinha de
+   procurar o botão do outro lado da tela. */
+#balao {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 340px;
+  padding: 6px 6px 6px 10px;
+  background: var(--texto);
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .28);
+  font-size: 12.5px;
+  /* Nasce fora da tela para não piscar no canto antes de ser posicionado. */
+  transform: translate(-50%, -100%);
+}
+
+#balao::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: var(--texto);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+#balao-texto {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: .85;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}
+
+#balao-tarjar {
+  flex: none;
+  background: #fff;
+  color: var(--texto);
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 12px;
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+#balao-tarjar:hover { background: #e9e9e4; }
+
+/* -------------------------------------------------------------- lateral */
+/* Dois scrolls, como pedido:
+   1. a página rola, e a lateral acompanha (`sticky` abaixo do cabeçalho);
+   2. quando o conteúdo dela é mais alto que a janela, ela rola por dentro
+      (`max-height` + `overflow: auto`).
+   Sem o `max-height` o `sticky` gruda a lateral inteira e o fim dela fica
+   inalcançável em documento longo. */
+#lateral {
+  position: sticky;
+  top: 59px;
+  align-self: start;
+  max-height: calc(100vh - 75px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+.bloco {
+  background: var(--papel);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.bloco h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; }
+
+#inventario { list-style: none; margin: 0; padding: 0; }
+
+#inventario li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f0f0ec;
+}
+#inventario li:last-child { border-bottom: 0; }
+#inventario .nome { flex: 1; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; }
+#inventario .qtd { color: var(--suave); font-variant-numeric: tabular-nums; }
+
+.linha { display: flex; gap: 6px; }
+.linha input { flex: 1; min-width: 0; }
+
+input[type=text] {
+  padding: 6px 8px;
+  border: 1px solid var(--borda);
+  border-radius: 5px;
+  font: inherit;
+  background: var(--papel);
+  color: var(--texto);
+}
+
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--borda);
+  background: var(--papel);
+  color: var(--texto);
+  cursor: pointer;
+}
+button:hover { border-color: var(--suave); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+
+.primario {
+  width: 100%;
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+  font-weight: 600;
+  padding: 10px;
+}
+.primario:hover { background: #17497f; }
+
+.secundario { font-size: 13px; }
+
+.erro { color: var(--falha); }
+.aviso { color: var(--suave); font-size: 12px; }
+
+#resultado .cabeca { font-weight: 600; margin-bottom: 6px; }
+#resultado.ok .cabeca { color: var(--ok); }
+#resultado.falha .cabeca { color: var(--falha); }
+#resultado ul { margin: 6px 0; padding-left: 18px; color: var(--suave); font-size: 12px; }
+#resultado a.baixar {
+  display: block;
+  text-align: center;
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--ok);
+  color: #fff;
+  border-radius: 5px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.largo { width: 100%; margin-top: 6px; }
+
+.rotulo-lista {
+  font-size: 12px;
+  color: var(--suave);
+  margin: 12px 0 6px;
+  border-top: 1px solid #f0f0ec;
+  padding-top: 10px;
+}
+
+#lista-manuais { list-style: none; margin: 0; padding: 0; }
+
+#lista-manuais li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+#lista-manuais .txt {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, "Cascadia Code", monospace;
+}
+
+#lista-manuais .txt.off { text-decoration: line-through; color: var(--suave); }
+
+#lista-manuais button {
+  padding: 1px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Resultado de verificação reprovada, com ação. */
+#resultado .ocorrencia {
+  border: 1px solid var(--borda);
+  border-radius: 5px;
+  padding: 8px;
+  margin: 8px 0;
+}
+#resultado .ocorrencia .quem {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+#resultado .ocorrencia .onde { font-size: 12px; color: var(--suave); margin-top: 3px; }
+#resultado .ocorrencia button { width: 100%; margin-top: 6px; }
+#resultado .estrutural { border-left: 3px solid var(--falha); }
+
+.limitacoes summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.limitacoes ul { margin: 10px 0 0; padding-left: 18px; color: var(--suave); font-size: 12px; }
+.limitacoes li { margin-bottom: 5px; }
+
+.girando {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid var(--borda);
+  border-top-color: var(--acento);
+  border-radius: 50%;
+  animation: girar .7s linear infinite;
+  vertical-align: -2px;
+}
+@keyframes girar { to { transform: rotate(360deg); } }
+
+@media (max-width: 1100px) {
+  #tela-revisao { grid-template-columns: 1fr; height: auto; }
+  .painéis { grid-template-columns: 1fr; }
+  .rolagem { max-height: 60vh; }
+}

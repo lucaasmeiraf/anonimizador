@@ -85,19 +85,104 @@ def _variantes(valor: str) -> list[str]:
     return [f for f in formas if len(f) >= TAMANHO_MINIMO]
 
 
+# Separadores que aparecem *dentro* de um identificador brasileiro:
+# 529.982.247-25, 0000000-00.2026.8.26.0100, 01310-100, (11) 98765-4321.
+# Removê-los reconstrói o identificador; remover qualquer outro caractere
+# fabricaria identificadores que não existem no documento.
+SEPARADORES_DE_ID = re.compile(r"[.\-/()\s]")
+
+
 def _procurar(agulhas: dict[str, list[str]], palheiro: str, vetor: str) -> list[Leak]:
+    """Procura cada valor no palheiro, em todas as formas plausíveis.
+
+    A busca de forma numérica **não** pode apagar todo não-dígito do palheiro.
+    Fazer isso num vetor binário — ``streams``, ``bytes-brutos`` — colapsa
+    megabytes de dados de fonte, coordenadas e offsets numa única sopa de
+    dígitos contígua, onde qualquer sequência curta aparece por coincidência.
+    Medido no corpus: uma agulha de 5 dígitos colide em 2.6% das vezes num
+    documento de 3 páginas *sem imagem*; num PDF real com fontes embutidas a
+    sopa é ordens de grandeza maior e a colisão vira quase certa.
+
+    O efeito disso era o pior possível para o produto: o gate reprovava uma
+    redação correta, o PDF era descartado, e o usuário via "vazou" sobre um
+    documento íntegro. Um gate que dá alarme falso é um gate que as pessoas
+    aprendem a ignorar.
+
+    A correção remove apenas os separadores que ocorrem *dentro* de um
+    identificador. Um CPF escrito ``529.982.247-25`` continua sendo
+    encontrado pela forma ``52998224725``; dígitos separados por qualquer
+    outro byte deixam de ser colados.
+    """
     if not palheiro:
         return []
     palheiro_norm = _normalizar(palheiro)
-    palheiro_digitos = re.sub(r"\D", "", palheiro)
+    palheiro_ids = SEPARADORES_DE_ID.sub("", palheiro)
     achados = []
     for valor, formas in agulhas.items():
         for forma in formas:
-            alvo = palheiro_digitos if forma.isdigit() else palheiro_norm
+            alvo = palheiro_ids if forma.isdigit() else palheiro_norm
             if forma in alvo:
                 achados.append(Leak(vetor, valor, f"como {forma!r}"))
                 break
     return achados
+
+
+# Strings hexadecimais de content stream: `[<435046203532...>] TJ`. Quatro
+# dígitos é o mínimo para não capturar tokens de estrutura curtos.
+_HEX_PDF = re.compile(r"<([0-9A-Fa-f\s]{4,})>")
+
+
+def _decodificar_hex(conteudo: str) -> str:
+    """Traduz as strings hexadecimais de um content stream para texto.
+
+    Sem isto o vetor ``streams`` tem uma cegueira séria: o PDF pode escrever
+    texto como ``<435046203532392e...>`` em vez de ``(CPF 529.982...)``, e é
+    o que o próprio PyMuPDF faz. A busca literal não encontra nada, e o
+    verificador devolve "aprovado" sobre um documento onde o valor está
+    perfeitamente recuperável por quem souber ler hexadecimal.
+
+    A tradução é feita sobre uma **cópia** do stream, que é procurada além do
+    conteúdo cru — as duas formas importam, porque um mesmo arquivo mistura
+    as duas conforme o gerador de cada trecho.
+    """
+
+    def traduzir(m: "re.Match[str]") -> str:
+        h = re.sub(r"\s", "", m.group(1))
+        if len(h) % 2:
+            h += "0"  # a spec manda completar com zero
+        try:
+            return bytes.fromhex(h).decode("latin-1", "ignore")
+        except ValueError:
+            return m.group(0)
+
+    return _HEX_PDF.sub(traduzir, conteudo)
+
+
+# Chaves de dicionário que identificam a natureza de um objeto PDF. A ordem
+# importa: `/Subtype` é mais específico que `/Type`.
+_CHAVES_TIPO = ("Subtype", "Type", "Filter")
+
+
+def _descrever_objeto(doc: "fitz.Document", xref: int) -> str:
+    """Nome legível do objeto por trás de um xref.
+
+    O que o revisor precisa saber diante de uma reprovação não é o número do
+    objeto — é se aquilo é o conteúdo da página, um formulário, uma anotação
+    ou uma fonte. Cada um tem conserto diferente, e sem essa informação
+    "vazou em streams" é um beco sem saída.
+    """
+    partes = []
+    for chave in _CHAVES_TIPO:
+        try:
+            valor = doc.xref_get_key(xref, chave)
+        except Exception:  # noqa: BLE001
+            continue
+        if valor and valor[0] != "null":
+            partes.append(str(valor[1]).lstrip("/"))
+    if not partes:
+        return "objeto sem tipo declarado"
+    # dict.fromkeys preserva a ordem e remove repetição (Type e Subtype iguais)
+    return "/".join(dict.fromkeys(partes))
 
 
 def verify(caminho: str | Path, valores: Iterable[str]) -> VerificationReport:
@@ -166,15 +251,41 @@ def verify(caminho: str | Path, valores: Iterable[str]) -> VerificationReport:
         leaks += _procurar(agulhas, xmp, "xmp")
         vetores.append("xmp")
 
-        # 9. streams descomprimidos
-        blob = []
+        # 9. streams descomprimidos, **um a um**
+        #
+        # Concatenar tudo antes de procurar era mais simples e destruía a
+        # única informação que torna um achado acionável: *que objeto* reteve
+        # o valor. "Vazou em streams" não diz se o problema é um XObject que a
+        # redação não alcançou, a aparência de um campo de formulário, ou uma
+        # revisão antiga que sobreviveu ao garbage collect — e cada um tem
+        # conserto diferente.
+        #
+        # Procurar por objeto também elimina um falso positivo de fronteira:
+        # uma sequência que só existia porque o fim de um stream encostava no
+        # começo de outro nunca foi recuperável de lugar nenhum.
         for xref in range(1, doc.xref_length()):
             try:
-                if doc.xref_is_stream(xref):
-                    blob.append(doc.xref_stream(xref).decode("latin-1", "ignore"))
+                if not doc.xref_is_stream(xref):
+                    continue
+                conteudo = doc.xref_stream(xref).decode("latin-1", "ignore")
             except Exception:  # noqa: BLE001
                 continue
-        leaks += _procurar(agulhas, "\n".join(blob), "streams")
+            # Duas leituras do mesmo objeto: crua e com as strings
+            # hexadecimais traduzidas. Um PDF mistura as duas codificações.
+            achados = _procurar(agulhas, conteudo, "streams")
+            vistos = {a.valor for a in achados}
+            for a in _procurar(agulhas, _decodificar_hex(conteudo), "streams"):
+                if a.valor not in vistos:
+                    achados.append(a)
+            for achado in achados:
+                leaks.append(
+                    Leak(
+                        achado.vetor,
+                        achado.valor,
+                        f"{achado.detalhe}, em {_descrever_objeto(doc, xref)} "
+                        f"(xref {xref})",
+                    )
+                )
         vetores.append("streams")
     finally:
         doc.close()

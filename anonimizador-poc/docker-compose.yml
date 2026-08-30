@@ -1,13 +1,28 @@
-# Todos os servicos de execucao rodam SEM REDE.
-# Isso nao e conveniencia: e a prova executavel da restricao de soberania da
-# Fase 0. Se alguma etapa tentar falar com um servico externo, ela falha em vez
-# de vazar conteudo de documento.
-x-base: &base
+# Nenhum servico que processa documento tem saida de rede.
+#
+# Isso nao e conveniencia: e a prova executavel da restricao de soberania. Se
+# alguma etapa tentar falar com um servico externo, ela falha em vez de vazar
+# conteudo de documento.
+#
+# Ha duas formas de garantir isso aqui, e a diferenca importa:
+#
+#   * `network_mode: none` — sem interface de rede nenhuma. Usado por todo
+#     servico de linha de comando. Garantia maxima, mas nao publica porta.
+#
+#   * rede `interna` (`internal: true`) — tem interface, alcanca outros
+#     containers da mesma rede, nao alcanca o mundo. Usado pelo servico `ui`,
+#     que precisa ser alcancavel. O egress continua bloqueado pelo kernel,
+#     subprocesso incluido (medido; ver src/anonimizador/web/forward.py).
+#
+# O `ui-proxy` e o unico container com saida de rede. Ele nao processa
+# documento: roda `web/forward.py`, que copia bytes entre sockets.
+
+# Configuracao da imagem, sem politica de rede.
+x-imagem: &imagem
   build:
     context: .
     dockerfile: docker/Dockerfile
   image: anonimizador-poc:fase0
-  network_mode: none
   volumes:
     - ./src:/app/src:ro
     - ./eval:/app/eval
@@ -15,6 +30,18 @@ x-base: &base
     - ./data:/app/data
     - ./out:/app/out
   working_dir: /app
+
+# Imagem + ausencia total de rede. Padrao para tudo que roda em lote.
+x-base: &base
+  <<: *imagem
+  network_mode: none
+
+networks:
+  # Sem rota para fora. Containers aqui se enxergam e nada mais.
+  interna:
+    internal: true
+  # So o encaminhador vive aqui.
+  externa: {}
 
 services:
   # Shell interativo para desenvolvimento.
@@ -44,6 +71,39 @@ services:
   offline-proof:
     <<: *base
     command: ["offline-proof"]
+
+  # Diagnostico dos vazamentos de PERSON: falta de deteccao ou rotulo errado.
+  # Entrypoint sobrescrito porque o script vive em eval/, fora da CLI.
+  diagnostico:
+    <<: *base
+    entrypoint: ["python", "/app/eval/diagnostico_person.py"]
+    command: ["--datasets", "/app/eval/datasets", "--out", "/app/eval/diagnostico-person.md"]
+
+  # --------------------------------------------------------------------
+  # Interface de revisao
+  # --------------------------------------------------------------------
+  # Faz TODO o trabalho: deteccao, redacao, verificacao, render de pagina.
+  # Fica na rede interna, sem egress. Nao publica porta — e inalcancavel do
+  # host de proposito; quem a alcanca e o `ui-proxy`.
+  ui:
+    <<: *imagem
+    networks: [interna]
+    entrypoint: ["python", "-m", "uvicorn"]
+    command: ["anonimizador.web.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      ANON_NER: "${ANON_NER:-bert-lenerbr}"
+    expose: ["8000"]
+
+  # A unica peca com saida de rede. Nao processa documento: copia bytes.
+  # Publicado so em 127.0.0.1 — nao escuta em interface externa da maquina.
+  ui-proxy:
+    <<: *imagem
+    networks: [interna, externa]
+    depends_on: [ui]
+    entrypoint: ["python", "-m", "anonimizador.web.forward"]
+    command: ["--escuta", "0.0.0.0:8000", "--destino", "ui:8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
 
   # CLI livre: docker compose run --rm cli redact --in ... --out ...
   cli:

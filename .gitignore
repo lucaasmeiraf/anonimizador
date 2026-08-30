@@ -3,6 +3,7 @@ anonimizador-poc/data/
 anonimizador-poc/out/
 anonimizador-poc/eval/datasets/
 anonimizador-poc/eval/report.md
+anonimizador-poc/eval/diagnostico-person.md
 
 __pycache__/
 *.py[cod]

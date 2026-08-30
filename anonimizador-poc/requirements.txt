@@ -17,5 +17,11 @@ pdfplumber==0.11.10
 # Corpus sintético
 Faker==40.37.0
 
+# Interface web (Fase 1)
+fastapi==0.121.2
+uvicorn==0.41.0
+python-multipart==0.0.20
+
 # Testes
 pytest==8.4.2
+httpx==0.28.1
