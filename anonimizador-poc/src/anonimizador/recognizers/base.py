@@ -48,6 +48,14 @@ forma crua + âncora explícita perto         0.45   forte: o texto declarou
 forma crua, sem âncora, checksum inválido   —      descartado
 =========================================  ======  ==========================
 
+**O score não é o discriminador — a marca é.** O enriquecedor de contexto do
+Presidio roda *depois* deste reconhecedor e soma por cima; um valor com DV
+inválido e âncora forte chega a 1.0 e fica indistinguível, pelo número, de um
+confirmado por checksum. Quem separa os dois é
+``recognition_metadata["checksum"]``, que a interface usa para dizer ao
+revisor por que aquele trecho foi apontado. Comparar score para essa decisão
+daria a resposta errada.
+
 O limiar de ``config.SCORE_THRESHOLD`` (0.35) deixa os três primeiros
 passarem. O quarto continua fora, e é o que preserva a precisão: um número de
 nota fiscal ou de matrícula com 11 dígitos, solto no texto, segue sendo

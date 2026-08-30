@@ -312,7 +312,27 @@ def baixar(sessao: Sessao = Depends(pegar_sessao)):
 # --------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 def raiz() -> HTMLResponse:
-    return HTMLResponse((ESTATICOS / "index.html").read_text(encoding="utf-8"))
+    """Serve a página, carimbando CSS e JS com a data de modificação deles.
+
+    Sem isso o navegador guarda `app.js` e `estilo.css` e continua rodando a
+    versão antiga depois de uma correção — o usuário recarrega, não vê
+    mudança, e conclui que o conserto não funcionou. É um modo de falha
+    especialmente ruim aqui, porque leva a investigar o lugar errado.
+
+    O carimbo muda quando o arquivo muda, então o cache continua valendo entre
+    duas versões iguais e é descartado exatamente quando precisa ser.
+    """
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    for arquivo in ("estilo.css", "app.js"):
+        caminho = ESTATICOS / arquivo
+        versao = int(caminho.stat().st_mtime) if caminho.exists() else 0
+        html = html.replace(f"/static/{arquivo}", f"/static/{arquivo}?v={versao}")
+    return HTMLResponse(
+        html,
+        # A própria página nunca é cacheada: ela é minúscula e é o que carrega
+        # os carimbos novos.
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/saude")

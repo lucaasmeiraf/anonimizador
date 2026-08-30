@@ -229,13 +229,21 @@ header {
   text-align: center; font-size: 11px; color: var(--suave); padding: 4px 0;
 }
 
-.camada-tarjas { position: absolute; inset: 0; }
+/* A camada cobre a página inteira (`inset: 0`), mas só os retângulos devem
+   capturar o mouse. Sem `pointer-events: none` aqui, ela vira um vidro
+   invisível sobre a página e **impede a seleção de texto em todo lugar** —
+   foi exatamente o que quebrou quando a camada de texto passou para este
+   painel: ela ficou embaixo do vidro. */
+.camada-tarjas { position: absolute; inset: 0; pointer-events: none; }
 
 .tarja {
   position: absolute;
   background: var(--tarja);
   cursor: pointer;
   border-radius: 1px;
+  /* Reativado só no retângulo: clicar na tarja continua ligando/desligando,
+     e o resto da página fica livre para selecionar. */
+  pointer-events: auto;
 }
 .tarja:hover { outline: 2px solid var(--acento); outline-offset: 1px; }
 
