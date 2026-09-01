@@ -90,7 +90,11 @@ def cmd_redact(args: argparse.Namespace) -> int:
     print(f"  redigidas     : {res.spans_redigidos} ({res.retangulos} retângulos)")
     print(f"  saneamento    : {res.saneamento}")
     if res.spans_sem_retangulo:
-        print(f"  SEM RETÂNGULO : {len(res.spans_sem_retangulo)} -> {res.spans_sem_retangulo[:5]}")
+        # Entidade e posição, não o texto: isto é sinal de bug de mapeamento,
+        # e quem for investigar tem o documento de origem em mãos. Ver
+        # `SpanSemRetangulo`.
+        amostra = ", ".join(str(s) for s in res.spans_sem_retangulo[:5])
+        print(f"  SEM RETÂNGULO : {len(res.spans_sem_retangulo)} -> {amostra}")
 
     relatorio = verify(args.saida, res.valores)
     print(f"\n  verificação   : {len(relatorio.vetores_executados)} vetores, "

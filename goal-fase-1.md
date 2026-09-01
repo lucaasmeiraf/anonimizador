@@ -433,8 +433,13 @@ como opção, não como tarefa.
 - [x] `GET /api/doc/{id}/download` com o gate de `verify().ok`.
 - [x] Qualquer edição invalida a aprovação e apaga o PDF já gerado.
 - [x] Nenhum valor de PII em log no módulo web — só id de span e contagem.
-- [ ] Corrigir `pdf_redactor.logger.warning("span sem retângulo: %r", valor)`,
-      que ainda loga o valor. Herdado da Fase 0.
+- [x] Corrigir `pdf_redactor.logger.warning("span sem retângulo: %r", valor)`,
+      que ainda logava o valor. Herdado da Fase 0. A causa era o tipo do campo
+      `RedactionResult.spans_sem_retangulo` (`list[str]` de valores); passou a
+      ser `SpanSemRetangulo(entity, start, end)`, e com isso o mesmo defeito
+      saiu também do `cli.py`, que imprimia até 5 valores no stdout.
+      `tests/test_log_sem_pii.py` trava a invariante, inclusive contra a
+      reintrodução de um campo de texto no registro.
 
 **Bloco 3 — Interface**
 - [x] Layout lado a lado com rolagem sincronizada.
