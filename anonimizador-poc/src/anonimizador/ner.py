@@ -80,6 +80,8 @@ class TransformersNerRecognizer(EntityRecognizer):
         janela: int = 1200,
         sobreposicao: int = 200,
         score_minimo: float = 0.5,
+        teto_tokens: int = 460,
+        janela_minima: int = 120,
     ) -> None:
         self.model_id = model_id
         self.label_map = label_map
@@ -87,6 +89,13 @@ class TransformersNerRecognizer(EntityRecognizer):
         self.janela = janela
         self.sobreposicao = sobreposicao
         self.score_minimo = score_minimo
+        # Teto de tokens por janela. O BERT aceita 512 posições contando os
+        # tokens especiais; 460 deixa folga sem encolher a janela útil.
+        self.teto_tokens = teto_tokens
+        # Piso da subdivisão: abaixo disto paramos de dividir. Uma janela
+        # minúscula custa uma inferência inteira e o contexto que sobra é
+        # pequeno demais para o NER decidir bem.
+        self.janela_minima = janela_minima
         self._pipe = None
         super().__init__(
             supported_entities=list(supported_entities),
@@ -124,23 +133,87 @@ class TransformersNerRecognizer(EntityRecognizer):
 
         A sobreposição garante que uma entidade na fronteira de uma janela
         apareça inteira na janela seguinte.
+
+        O corte é por **caractere**, e o teto do modelo é por **token**. Os dois
+        não são proporcionais, e por isso o resultado passa por
+        ``_caber_no_teto`` antes de ir para o modelo — ver o que aquilo conserta.
         """
         if len(text) <= self.janela:
-            return [(0, len(text))]
+            janelas = [(0, len(text))]
+        else:
+            janelas, ini = [], 0
+            passo = self.janela - self.sobreposicao
+            while ini < len(text):
+                fim = min(ini + self.janela, len(text))
+                if fim < len(text):
+                    corte = text.rfind(" ", ini + passo // 2, fim)
+                    if corte > ini:
+                        fim = corte
+                janelas.append((ini, fim))
+                if fim >= len(text):
+                    break
+                ini = max(ini + 1, fim - self.sobreposicao)
 
-        janelas, ini = [], 0
-        passo = self.janela - self.sobreposicao
-        while ini < len(text):
-            fim = min(ini + self.janela, len(text))
-            if fim < len(text):
-                corte = text.rfind(" ", ini + passo // 2, fim)
-                if corte > ini:
-                    fim = corte
-            janelas.append((ini, fim))
-            if fim >= len(text):
-                break
-            ini = max(ini + 1, fim - self.sobreposicao)
-        return janelas
+        return self._caber_no_teto(text, janelas)
+
+    # -- teto de tokens ----------------------------------------------------
+    def _conta_tokens(self, trecho: str) -> int:
+        tok = self._pipeline().tokenizer
+        return len(tok(trecho, add_special_tokens=True, truncation=False)["input_ids"])
+
+    def _caber_no_teto(
+        self, text: str, janelas: list[tuple[int, int]]
+    ) -> list[tuple[int, int]]:
+        """Subdivide as janelas que estouram o teto de tokens do modelo.
+
+        **O defeito que isto conserta.** A janela é medida em caracteres (1200)
+        e o modelo tem teto em tokens (512). Os dois não são proporcionais:
+        prosa comum cabe com folga — 1200 caracteres dão ~256 tokens —, mas
+        texto denso em identificadores dá **648**. Um número como
+        ``0000000-00.2026.8.26.0100`` vira uma dúzia de tokens; uma linha de
+        tabela com processo, CPF, RG, telefone e CEP explode a conta.
+
+        O que acontecia então: o ``pipe`` levantava ``RuntimeError`` (``tensor
+        522 != 512``), o ``except`` do ``analyze`` engolia a janela inteira, e a
+        detecção seguia **sem nenhum nome daquele trecho**. Medido: um bloco de
+        1.294 caracteres com um nome no meio produzia 60 spans de
+        identificadores e **zero** ``PERSON``. Nenhum erro chegava à tela.
+
+        O usuário veria os CPFs tarjados e concluiria, com toda a razão
+        aparente, que o documento não tem nomes. É o pior modo de falha deste
+        sistema — falso silêncio — e aparecia justamente onde ele mais dói: em
+        tabela de pessoas, que é o documento que mais carrega dado pessoal.
+
+        A correção é por subdivisão, e não por reescrever o janelamento em
+        tokens, de propósito: uma janela que já cabe sai daqui **idêntica**.
+        Documento que funciona hoje produz exatamente as mesmas janelas, os
+        mesmos spans e os mesmos números de avaliação. Só o caminho quebrado
+        muda.
+        """
+        saida: list[tuple[int, int]] = []
+        for ini, fim in janelas:
+            saida.extend(self._dividir(text, ini, fim))
+        return saida
+
+    def _dividir(self, text: str, ini: int, fim: int) -> list[tuple[int, int]]:
+        if fim - ini <= self.janela_minima:
+            return [(ini, fim)]
+        if self._conta_tokens(text[ini:fim]) <= self.teto_tokens:
+            return [(ini, fim)]
+
+        # Corta perto do meio, preferindo um espaço: partir no meio de um
+        # identificador criaria dois fragmentos que não são nada.
+        meio = (ini + fim) // 2
+        corte = text.rfind(" ", ini + (fim - ini) // 4, meio + (fim - ini) // 4)
+        if corte <= ini or corte >= fim:
+            corte = meio
+
+        # A sobreposição também vale aqui: sem ela, um nome exatamente sobre o
+        # corte desapareceria — que é o mesmo defeito, em escala menor.
+        recuo = min(self.sobreposicao, (fim - corte) // 2, (corte - ini) // 2)
+        esquerda = self._dividir(text, ini, corte)
+        direita = self._dividir(text, max(ini, corte - recuo), fim)
+        return esquerda + direita
 
     # -- análise -----------------------------------------------------------
     def analyze(

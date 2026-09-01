@@ -464,44 +464,93 @@ aplicado.
 
 ---
 
-## Defeito conhecido, não resolvido — estouro de 512 tokens no NER
+## Defeito de falso silêncio no NER — encontrado e corrigido em 2026-08-31
 
-Observado em 2026-08-31, durante a colheita do gate de usabilidade: **1
-documento em 300** produziu
+Observado durante a colheita do gate de usabilidade: **1 documento em 300**
+produziu `RuntimeError: The size of tensor a (522) must match the size of
+tensor b (512)`.
+
+### A causa
+
+`ner.py` fatiava o texto em janelas de **1200 caracteres**; o BERT tem teto de
+**512 tokens**. As duas medidas não são proporcionais:
+
+| Texto | 1200 caracteres viram |
+|---|---:|
+| prosa comum | 256 tokens |
+| denso em identificadores | **648 tokens** |
+
+Um número como `0000000-00.2026.8.26.0100` vira uma dúzia de tokens. Uma linha
+de tabela com processo, CPF, RG, telefone e CEP estoura a conta sozinha.
+
+### Por que era o pior tipo de defeito
+
+O `analyze` já tinha `except ... continue` por janela, com o comentário "uma
+janela ruim não derruba o doc". O efeito real era outro: a janela inteira saía
+da detecção **em silêncio**.
+
+Medido, com um bloco de 1.294 caracteres e um nome no meio:
 
 ```
-RuntimeError: The size of tensor a (522) must match the size of tensor b (512)
+antes:  60 spans de identificadores,  0 PERSON   <- o nome sumiu
+depois: 61 spans,                     1 PERSON   <- 'Mariana Aparecida Souza'
 ```
 
-vindo de `modeling_bert.py`. É o limite de 512 posições do BERT sendo
-ultrapassado por um bloco de 522 tokens.
+O usuário veria os CPFs tarjados e concluiria, com toda a razão aparente, que
+o documento não tem nomes. É o *falso silêncio* do `CLAUDE.md`, e aparecia
+justamente onde mais dói: em tabela de pessoas.
 
-O que está estabelecido:
+### A correção
 
-- **Não é o caso óbvio.** Texto longo com pontuação (730 palavras) e tabela
-  longa sem pontuação nenhuma (1.800 palavras, 200 nomes) foram testados e
-  passam. O gatilho é mais estreito e **não foi reproduzido**.
-- **Uma exceção no reconhecedor de NER sobe** — testado por injeção. Presidio
-  não a engole nesse nível. Na interface isso viraria erro visível, não tela
-  vazia, o que é o comportamento certo.
-- **Mas alguma camada mais funda engoliu esta**, porque a colheita processou
-  os 300 candidatos e terminou com código 0. Ou seja: para aquele documento, o
-  NER contribuiu de forma parcial ou nula, **sem erro visível**.
+`_caber_no_teto` subdivide, com sobreposição, apenas as janelas que estouram o
+teto de tokens. **Uma janela que já cabia sai idêntica** — documento que
+funcionava produz as mesmas janelas, os mesmos spans e os mesmos números. Foi
+por isso que a correção não reescreveu o janelamento em tokens, que seria mais
+elegante e mexeria em tudo.
 
-O terceiro ponto é o que preocupa: é a assinatura do *falso silêncio* — um
-documento em que os nomes não seriam detectados e a tela não diria nada. Não
-está confirmado que chega até a UI nesse formato.
+`tests/test_ner_janelas.py`, 7 testes: janela que cabe não muda, janela densa é
+subdividida, a subdivisão não deixa buraco (buraco é PII que nunca chega ao
+modelo), a sobreposição sobrevive ao corte, a recursão termina com texto sem
+espaço, e a prova ponta a ponta com o modelo real.
+
+### Medido: `make eval` A/B no mesmo corpus
+
+Rodado duas vezes, com e sem a correção, sobre os mesmos 50 documentos:
+
+| `bert-lenerbr` | sem | com |
+|---|---:|---:|
+| recall PERSON | 0.930 | **0.936** |
+| precisão PERSON | 0.660 | 0.660 |
+| F1 relaxado | 0.773 | **0.774** |
+| documentos sem vazar PII | 49/50 | 49/50 |
+
+| `bertimbau-harem` | sem | com |
+|---|---:|---:|
+| recall PERSON | 0.896 | **0.901** |
+| documentos sem vazar PII | 41/50 | **42/50** |
+
+Melhora estrita: recall sobe nos dois transformers, precisão não se move,
+e o `bertimbau-harem` ganha um documento limpo. O `spacy` saiu **idêntico**
+nas duas rodadas (F1 0.278) — é o controle, porque ele não passa pelo
+`TransformersNerRecognizer`, e a igualdade valida o método do A/B.
+
+O `0.787` registrado na tabela de D1 é de uma geração anterior do corpus, não
+uma regressão desta mudança — o mesmo cuidado de reprodutibilidade da seção de
+D1.
 
 **Impacto no gate de usabilidade: nenhum.** O filtro de "exatamente um
-vazamento" exclui documentos com NER quebrado, porque uma falha de NER produz
-*muitos* nomes sem cobertura, não um. Os 4 documentos da sessão foram
-verificados um a um: 17 a 24 `PERSON` detectados em cada, e em todos o nome do
-gabarito realmente escapa da tarja.
+vazamento" já excluía documentos com NER quebrado, porque uma falha de janela
+produz *muitos* nomes sem cobertura, não um. Os 4 documentos da sessão foram
+conferidos um a um: 17 a 24 `PERSON` detectados em cada, e em todos o nome do
+gabarito escapa mesmo da tarja.
 
-**Próximo passo quando este item for pego:** reproduzir com a semente 20260901
-sobre 300 candidatos isolando o documento que falha, e decidir entre truncar
-com janela deslizante ou fatiar o texto antes do NER. Fatiar é o certo —
-truncar perderia detecção no fim do documento, em silêncio.
+### O que **não** foi resolvido
+
+O `except` por janela continua existindo, e continua silencioso. A causa
+realista sumiu, mas se uma janela falhar por outro motivo a detecção segue
+incompleta sem ninguém saber. Fechar isso exige levar o aviso até a tela —
+`ner` → `pipeline` → `sessao` → `app` → front-end —, o que é mudança de
+contrato em quatro camadas e merece item próprio, não carona nesta correção.
 
 ---
 
