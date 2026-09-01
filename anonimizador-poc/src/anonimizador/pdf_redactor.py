@@ -40,13 +40,43 @@ logger = logging.getLogger(__name__)
 PRETO = (0, 0, 0)
 
 
+@dataclass(frozen=True)
+class SpanSemRetangulo:
+    """Um span detectado que não produziu retângulo — sinal de bug de mapeamento.
+
+    Descreve **onde** o defeito está, nunca **o que** estava escrito ali. A
+    distinção não é cosmética: este registro é a única coisa deste caminho que
+    sai do processo — vai para log, para o stdout da CLI e para o relatório da
+    sessão. Carregar o texto original faria dele uma cópia de dado pessoal
+    fora do PDF saneado, com retenção própria, sem verificação e sem TTL. O
+    arquivo de saída é auditado em dez vetores; a linha de log não é auditada
+    em nenhum.
+
+    O que o diagnóstico exige é a entidade e o intervalo: eles apontam o span
+    no texto e permitem reproduzir o caso a partir do documento de origem, que
+    é onde a investigação tem de acontecer de qualquer forma. O valor não
+    acrescenta nada a essa investigação — quem a faz tem o documento em mãos.
+    """
+
+    entity: str
+    start: int
+    end: int
+
+    @property
+    def comprimento(self) -> int:
+        return self.end - self.start
+
+    def __str__(self) -> str:
+        return f"{self.entity}[{self.comprimento}] @{self.start}"
+
+
 @dataclass
 class RedactionResult:
     caminho_saida: str
     spans_redigidos: int = 0
     retangulos: int = 0
     valores: list[str] = field(default_factory=list)
-    spans_sem_retangulo: list[str] = field(default_factory=list)
+    spans_sem_retangulo: list[SpanSemRetangulo] = field(default_factory=list)
     saneamento: dict[str, bool] = field(default_factory=dict)
 
 
@@ -62,18 +92,22 @@ def redact_document(
     res = RedactionResult(caminho_saida=caminho_saida)
 
     for span in spans:
-        valor = span.text_of(tm.text)
         rects = tm.rects_for(span.start, span.end)
         if not rects:
             # Nenhuma caixa: o span caiu inteiro sobre separadores sintéticos.
             # Registramos em vez de engolir — é sinal de bug no mapeamento, e
             # significaria PII detectada mas não tarjada.
-            res.spans_sem_retangulo.append(valor)
-            logger.warning("span sem retângulo: %r (%s)", valor, span.entity)
+            #
+            # O valor sequer é lido aqui. Materializá-lo para depois não usar
+            # convida a próxima pessoa a colocá-lo no log "só para depurar",
+            # que foi exatamente como esta linha nasceu.
+            sem_caixa = SpanSemRetangulo(span.entity, span.start, span.end)
+            res.spans_sem_retangulo.append(sem_caixa)
+            logger.warning("span sem retangulo: %s", sem_caixa)
             continue
 
         res.spans_redigidos += 1
-        res.valores.append(valor)
+        res.valores.append(span.text_of(tm.text))
         for pno, rect in rects:
             doc.load_page(pno).add_redact_annot(rect, fill=cor)
             res.retangulos += 1

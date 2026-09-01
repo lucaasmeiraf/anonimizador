@@ -270,10 +270,27 @@ classificou como `LOCATION` (13 casos) ou `ORGANIZATION` (2) — rótulos que
 
 Isso reclassifica o problema. Não é limite de detecção; é interação entre erro
 de classificação e política de preservação, num subconjunto reconhecível —
-sobrenomes que também são topônimo. O reconhecedor de contexto é o conserto
-certo, e está registrado como D4 em `goal-fase-1.md`. O detalhe caso a caso
-sai em `eval/diagnostico-person.md`, gerado por `make diagnostico` (artefato,
-não versionado — como o `report.md`).
+sobrenomes que também são topônimo. O detalhe caso a caso sai em
+`eval/diagnostico-person.md`, gerado por `make diagnostico` (artefato, não
+versionado — como o `report.md`).
+
+> **Atualização em 2026-08-31 — duas correções a esta seção.**
+>
+> 1. Os números acima são de uma **geração anterior do corpus**. Re-executado
+>    sobre o corpus atual: `bert-lenerbr` 1 rótulo errado e **0 sem span**;
+>    `bertimbau-harem` 11 rótulos errados e **1 sem span**. A frase "em 710
+>    entidades por configuração, nenhum nome passou despercebido" continua
+>    exata para o `bert-lenerbr`, que é a configuração escolhida, mas deixou
+>    de valer para o `bertimbau-harem`.
+>
+> 2. A conclusão de que **"o reconhecedor de contexto é o conserto certo"
+>    estava errada**, e foi removida do parágrafo acima. Medida a vizinhança
+>    dos 12 casos que vazam: nenhum tem âncora de pessoa (`Sr.`, `Dr.`,
+>    `portador do`) antes dele. Todos estão em célula de tabela, precedidos de
+>    CPF, telefone ou data de nascimento. O NER erra justamente onde não há
+>    contexto — e onde não há contexto também não há âncora para uma regra
+>    usar. O conserto certo é estrutural: identificar a coluna pelo cabeçalho.
+>    Ver **D4 revisada** em `goal-fase-1.md`.
 
 ---
 
