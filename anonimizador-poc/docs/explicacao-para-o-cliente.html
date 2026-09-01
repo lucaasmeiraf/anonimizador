@@ -1,0 +1,453 @@
+<title>Anonimizador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;1,400&family=Public+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --tinta:      #16202B;
+    --papel:      #F7F6F4;
+    --grafite:    #5A6472;
+    --carimbo:    #9B2C2C;
+    --selo:       #1F6F6B;
+
+    --ground:     var(--papel);
+    --superficie: #FFFFFF;
+    --texto:      var(--tinta);
+    --texto-2:    var(--grafite);
+    --linha:      #DFDCD6;
+    --acento:     var(--carimbo);
+    --ok:         var(--selo);
+    --realce:     #EFECE6;
+
+    --serif: "Spectral", Georgia, "Times New Roman", serif;
+    --sans:  "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono:  "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+    --medida: 34rem;
+    --calha: 8rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:     #10171F;
+      --superficie: #172029;
+      --texto:      #E8E6E1;
+      --texto-2:    #9AA4B2;
+      --linha:      #2A3541;
+      --acento:     #D98A85;
+      --ok:         #63B5AE;
+      --realce:     #1D2731;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:     #10171F;
+    --superficie: #172029;
+    --texto:      #E8E6E1;
+    --texto-2:    #9AA4B2;
+    --linha:      #2A3541;
+    --acento:     #D98A85;
+    --ok:         #63B5AE;
+    --realce:     #1D2731;
+  }
+
+  /* A amostra de documento e uma folha de papel: ela nao troca de tema, do
+     mesmo jeito que uma folha impressa nao troca. Tokens proprios, para que a
+     tarja preta tenha contraste garantido nos dois temas. */
+  .folha {
+    --f-papel: #FBFAF8;
+    --f-tinta: #1A1A1A;
+    --f-grafite: #6B6B6B;
+    --f-linha: #E3E0DA;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--texto);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .pagina {
+    max-width: calc(var(--calha) + var(--medida) + 3rem);
+    margin: 0 auto;
+    padding: clamp(2.5rem, 6vw, 5rem) 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.25rem;
+  }
+
+  /* ---- calha de rotulos ---- */
+  section { display: grid; gap: 0 3rem; }
+  @media (min-width: 56rem) {
+    section { grid-template-columns: var(--calha) minmax(0, var(--medida)); }
+  }
+
+  .rotulo {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--texto-2);
+    padding-top: 0.55rem;
+  }
+  @media (min-width: 56rem) {
+    .rotulo { text-align: right; border-right: 1px solid var(--linha); padding-right: 1.25rem; }
+  }
+  @media (max-width: 55.99rem) {
+    .rotulo { margin-bottom: 0.75rem; }
+  }
+
+  .corpo { display: flex; flex-direction: column; gap: 1.15rem; min-width: 0; }
+
+  /* ---- tipografia ---- */
+  h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--serif); font-weight: 600; }
+  h1 { font-size: clamp(2.35rem, 6vw, 3.4rem); line-height: 1.08; letter-spacing: -0.015em; }
+  h2 { font-size: 1.6rem; line-height: 1.2; }
+  h3 { font-size: 1.075rem; font-family: var(--sans); font-weight: 700; }
+  p { margin: 0; }
+  a { color: var(--acento); }
+
+  .abertura { font-family: var(--serif); font-size: 1.3rem; line-height: 1.5; color: var(--texto-2); }
+  .abertura strong { color: var(--texto); font-weight: 600; }
+
+  .marca {
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--acento); margin-bottom: 1.1rem;
+  }
+
+  /* ---- a folha de amostra ---- */
+  .folha {
+    background: var(--f-papel);
+    color: var(--f-tinta);
+    border: 1px solid var(--f-linha);
+    border-radius: 2px;
+    padding: 1.5rem 1.6rem;
+    box-shadow: 0 1px 2px rgba(22,32,43,.07), 0 8px 24px -12px rgba(22,32,43,.22);
+    font-size: 0.95rem;
+    line-height: 1.9;
+  }
+  .folha-titulo {
+    font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.11em;
+    text-transform: uppercase; color: var(--f-grafite);
+    padding-bottom: 0.7rem; margin-bottom: 0.9rem; border-bottom: 1px solid var(--f-linha);
+    display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  .comparacao { display: grid; gap: 1rem; }
+  @media (min-width: 40rem) { .comparacao { grid-template-columns: 1fr 1fr; } }
+
+  /* A tarja falsa: retangulo por cima, texto intacto embaixo. Selecionavel,
+     copiavel — que e exatamente o defeito que ela demonstra. */
+  .tarja-falsa {
+    background: var(--f-tinta);
+    color: var(--f-tinta);
+    padding: 0.05em 0.2em;
+    border-radius: 1px;
+  }
+  .tarja-falsa::selection { background: #FFD34D; color: var(--f-tinta); }
+
+  /* A tarja verdadeira: nao ha texto. O retangulo e tudo que existe. */
+  .tarja-real {
+    display: inline-block;
+    width: 7.4em;
+    height: 1.05em;
+    vertical-align: -0.18em;
+    background: var(--f-tinta);
+    border-radius: 1px;
+  }
+
+  .instrucao {
+    font-family: var(--mono); font-size: 0.74rem; line-height: 1.6;
+    color: var(--texto-2); display: flex; gap: 0.6rem; align-items: baseline;
+  }
+  .instrucao::before { content: "→"; color: var(--acento); }
+
+  .veredicto { font-size: 0.82rem; font-family: var(--sans); margin-top: 0.55rem; color: var(--f-grafite); }
+  .veredicto b { color: var(--f-tinta); font-weight: 700; }
+
+  /* ---- blocos ---- */
+  .garantia { display: flex; flex-direction: column; gap: 0.45rem; padding-top: 1.15rem; border-top: 1px solid var(--linha); }
+  .garantia:first-of-type { border-top: 0; padding-top: 0; }
+  .garantia p { color: var(--texto-2); }
+  .garantia h3 { color: var(--texto); }
+
+  .fluxo { display: grid; gap: 0.85rem; counter-reset: etapa; }
+  @media (min-width: 46rem) { .fluxo { grid-template-columns: repeat(4, 1fr); } }
+  .etapa { border-top: 2px solid var(--acento); padding-top: 0.7rem; }
+  .etapa b { display: block; font-size: 0.95rem; }
+  .etapa span { font-size: 0.85rem; color: var(--texto-2); }
+
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  .rolagem { overflow-x: auto; }
+  th, td { text-align: left; padding: 0.6rem 0.9rem 0.6rem 0; border-bottom: 1px solid var(--linha); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--texto-2); font-weight: 500; }
+  td:first-child { font-weight: 500; white-space: nowrap; padding-right: 1.5rem; }
+
+  .nota {
+    background: var(--realce); border-left: 2px solid var(--acento);
+    padding: 1rem 1.15rem; font-size: 0.93rem; display: flex; flex-direction: column; gap: 0.6rem;
+  }
+  .nota b { font-weight: 700; }
+
+  .selo-ok { color: var(--ok); font-weight: 700; }
+
+  .pe {
+    border-top: 1px solid var(--linha); padding-top: 1.5rem;
+    font-size: 0.83rem; color: var(--texto-2); display: flex; flex-direction: column; gap: 0.5rem;
+  }
+
+  ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.5rem; color: var(--texto-2); }
+  li::marker { color: var(--acento); }
+
+  :focus-visible { outline: 2px solid var(--acento); outline-offset: 3px; }
+</style>
+
+<div class="pagina">
+
+  <section>
+    <div class="rotulo">Anonimizador</div>
+    <div class="corpo">
+      <div>
+        <div class="marca">Documentos protegidos sem sair da sua máquina</div>
+        <h1>A tarja preta que realmente apaga.</h1>
+      </div>
+      <p class="abertura">
+        Quase todo vazamento de documento &ldquo;tarjado&rdquo; que virou notícia tem a mesma causa:
+        o retângulo preto foi <strong>desenhado por cima</strong> do texto, e o texto continuou lá.
+        Veja você mesmo a diferença.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo">Demonstração</div>
+    <div class="corpo">
+      <p class="instrucao">Passe o mouse selecionando as duas tarjas abaixo, como se fosse copiar.</p>
+
+      <div class="comparacao">
+        <div class="folha">
+          <div class="folha-titulo"><span>Tarja desenhada por cima</span><span>✕</span></div>
+          <div>
+            CONTRATADO: <span class="tarja-falsa">Mariana A. Souza</span>,<br>
+            inscrito no CPF <span class="tarja-falsa">529.982.247-25</span>.
+          </div>
+          <p class="veredicto">O texto continua dentro do arquivo. <b>Selecione e ele aparece.</b></p>
+        </div>
+
+        <div class="folha">
+          <div class="folha-titulo"><span>Tarja desta ferramenta</span><span>✓</span></div>
+          <div>
+            CONTRATADO: <span class="tarja-real" role="img" aria-label="trecho removido do arquivo"></span>,<br>
+            inscrito no CPF <span class="tarja-real" role="img" aria-label="trecho removido do arquivo"></span>.
+          </div>
+          <p class="veredicto">Não há o que selecionar. <b>O texto foi removido do arquivo.</b></p>
+        </div>
+      </div>
+
+      <p style="font-size:.8rem;color:var(--texto-2)">
+        Os dados acima são fictícios, criados para demonstração.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo">O problema</div>
+    <div class="corpo">
+      <h2>Duas saídas comuns, dois riscos</h2>
+      <p>
+        Um órgão precisa publicar um processo. Um escritório precisa enviar um contrato para a outra
+        parte. Um hospital precisa compartilhar um prontuário para pesquisa. O documento precisa sair;
+        o dado pessoal não pode ir junto.
+      </p>
+      <p>
+        <b>Tarjar à mão</b> produz o arquivo que você acabou de testar: parece protegido, e devolve o
+        dado com um copiar e colar.
+      </p>
+      <p>
+        <b>Enviar para um serviço na nuvem</b> resolve o problema técnico e cria outro. O documento
+        com os dados sensíveis foi entregue a um terceiro — muitas vezes fora do país — antes de
+        ser protegido.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo">Como funciona</div>
+    <div class="corpo">
+      <h2>Quatro passos, e a decisão é sempre sua</h2>
+      <div class="fluxo">
+        <div class="etapa"><b>Enviar</b><span>Você escolhe o PDF.</span></div>
+        <div class="etapa"><b>Revisar</b><span>Original e proposta lado a lado.</span></div>
+        <div class="etapa"><b>Aprovar</b><span>Você liga e desliga cada tarja.</span></div>
+        <div class="etapa"><b>Baixar</b><span>Só sai se a conferência aprovar.</span></div>
+      </div>
+      <p>
+        A revisão humana é o centro da ferramenta, não um detalhe. A detecção automática erra nos
+        dois sentidos, e o desenho leva em conta qual erro é mais fácil de consertar: uma tarja
+        sobrando você <b>vê</b> e desliga com um clique; uma tarja faltando exige notar uma ausência.
+      </p>
+      <p>
+        Por isso a ferramenta prefere marcar demais. Nos testes ela encontra <b>92,5% dos nomes de
+        pessoa</b>, ao custo de que cerca de um terço do que marca não precisava ser marcado — e é
+        isso que a tela existe para você corrigir. Se algo passou batido, você seleciona o trecho
+        na tela, ou digita o valor e cobre todas as ocorrências dele de uma vez.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo">Garantias</div>
+    <div class="corpo">
+      <h2>Três coisas que a ferramenta garante</h2>
+
+      <div class="garantia">
+        <h3>1. A tarja apaga, não esconde</h3>
+        <p>
+          O trecho é removido do arquivo. E não só da página: o mesmo dado costuma estar guardado
+          em paralelo nas propriedades do arquivo, em anexos, em comentários, em campos de
+          formulário, no sumário e em versões antigas que o PDF carrega junto. Todos são limpos.
+        </p>
+      </div>
+
+      <div class="garantia">
+        <h3>2. O documento não sai da sua máquina</h3>
+        <p>
+          Não é uma promessa de configuração — é uma ausência de capacidade. A parte do sistema que
+          lê o seu documento roda sem interface de rede: mesmo que alguém quisesse enviá-lo para
+          fora, não existe caminho. Um comando tenta alcançar a internet de dentro dessa parte e
+          <b>reprova o sistema</b> se conseguir.
+        </p>
+      </div>
+
+      <div class="garantia">
+        <h3>3. Nada é entregue sem conferência independente</h3>
+        <p>
+          Depois de gerar o arquivo protegido, uma segunda etapa reabre o resultado do zero e procura
+          cada valor que deveria ter sumido, em <b>dez lugares diferentes</b> do arquivo — inclusive na
+          leitura crua dos bytes, com uma biblioteca diferente da que fez a remoção. Se qualquer
+          valor sobrevive, <span class="selo-ok">não existe botão de download</span>: o arquivo
+          reprovado é apagado e a tela explica o que sobreviveu.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo">O que encontra</div>
+    <div class="corpo">
+      <h2>O que ele identifica sozinho</h2>
+      <div class="rolagem">
+        <table>
+          <tr><th>Identificadores</th><td>CPF, CNPJ, RG, CNH, PIS/PASEP, título de eleitor, cartão do SUS, número de processo judicial</td></tr>
+          <tr><th>Contato</th><td>telefone, e-mail, CEP, endereço</td></tr>
+          <tr><th>Pessoas</th><td>nome de pessoa, organização, local, data</td></tr>
+        </table>
+      </div>
+      <p>
+        Os números são conferidos pelo dígito verificador: um CPF válido é reconhecido com certeza
+        matemática, não por parecer um CPF. Números com dígito errado — comuns em minuta, formulário
+        preenchido à mão ou documento digitalizado — também são apontados, mas marcados como
+        <b>suspeita</b>, e a tela diz qual é qual.
+      </p>
+      <p>
+        Nome de órgão, cidade e data começam <b>preservados</b>, não tarjados: um ato administrativo
+        sem o órgão e sem a data perde o sentido de ser publicado. Você muda isso por documento.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo">Limites</div>
+    <div class="corpo">
+      <h2>O que ele não faz</h2>
+      <p>Esta lista é parte da ferramenta, não uma ressalva de rodapé.</p>
+      <div class="rolagem">
+        <table>
+          <tr><td>Documento digitalizado</td><td>Se o PDF é uma imagem sem texto embutido, não há texto a remover. A ferramenta recusa o arquivo, em vez de mostrar uma tela vazia que pareceria &ldquo;nada encontrado&rdquo;.</td></tr>
+          <tr><td>Assinatura digital</td><td>Alterar o arquivo quebra a assinatura. É matemático, não tem contorno. <i>Ainda não testado com documento assinado real.</i></td></tr>
+          <tr><td>Links e sumário</td><td>São removidos por inteiro, inclusive os inofensivos.</td></tr>
+          <tr><td>Propriedades do arquivo</td><td>Autor, título, data de criação e programa gerador são zerados.</td></tr>
+          <tr><td>Não desfaz</td><td>Não há chave nem cópia guardada. O que devolve o original é o original — e a ferramenta nunca altera o arquivo que você envia.</td></tr>
+          <tr><td>Layout</td><td>Página, fontes e diagramação ficam idênticas. Isso é intencional.</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo">LGPD e LAI</div>
+    <div class="corpo">
+      <h2>A distinção que costuma ser vendida errado</h2>
+      <ul>
+        <li><b>Dado anonimizado</b> deixa de ser dado pessoal e sai do alcance da lei — mas só enquanto o processo não puder ser revertido.</li>
+        <li><b>Dado pseudonimizado</b>, substituído por um código que alguém consegue desfazer, continua sendo dado pessoal, com todas as obrigações que isso traz.</li>
+      </ul>
+      <p>
+        O que esta ferramenta faz hoje é remoção irreversível — o caso mais forte. É por isso que a
+        irreversibilidade, que parece uma limitação, é justamente o que dá valor ao resultado.
+      </p>
+      <p>
+        Está previsto um segundo modo, reversível sob chave, para quando alguém autorizado precisa
+        voltar ao original. <b>Ele ainda não existe</b>, e quando existir a ferramenta dirá na tela, no
+        momento da escolha, que ligá-lo devolve o documento para dentro do alcance da LGPD.
+      </p>
+
+      <div class="nota">
+        <span><b>E a Lei de Acesso à Informação.</b> Em documento público as duas leis puxam para
+        lados opostos: a LGPD empurra para tarjar, a LAI empurra para preservar, porque publicidade
+        é a regra.</span>
+        <span>Tarjar demais <b>não é o lado seguro</b> — é a outra falha. Um documento tarjado além da
+        conta perde valor probatório. É por isso que órgão, local e data são preservados por padrão,
+        e por isso a decisão final é sempre de uma pessoa.</span>
+      </div>
+
+      <p style="font-size:.9rem;color:var(--texto-2)">
+        A leitura jurídica do seu caso concreto é de quem responde por ela na sua organização. O que
+        a ferramenta faz é descrever com precisão o que fez com o arquivo, para que a decisão seja
+        tomada sobre fato, e não sobre suposição.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo">Estado</div>
+    <div class="corpo">
+      <h2>Onde o projeto está</h2>
+      <p>
+        Isto <b>não é um produto acabado</b>, e dizer o contrário seria o tipo de imprecisão que a
+        ferramenta existe para evitar. É um sistema em construção, com cada etapa medida antes de a
+        seguinte começar.
+      </p>
+      <div class="rolagem">
+        <table>
+          <tr><th>Etapa</th><th>Situação</th></tr>
+          <tr><td>Detecção e remoção</td><td>Concluída, com números.</td></tr>
+          <tr><td>Tela de revisão</td><td>Quase concluída. Falta medir, com pessoas reais, se um revisor encontra uma tarja faltante.</td></tr>
+          <tr><td>Modo reversível sob chave</td><td>Desenhado, não decidido.</td></tr>
+        </table>
+      </div>
+      <p style="font-size:.9rem;color:var(--texto-2)">
+        Antes de qualquer entrega comercial, duas pendências de licenciamento de componentes de
+        terceiros precisam ser resolvidas. Todos os testes usam exclusivamente documentos
+        sintéticos: nenhum documento real entra no ambiente de desenvolvimento.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <div class="rotulo"></div>
+    <div class="corpo">
+      <div class="pe">
+        <span>Anonimizador — documento explicativo para avaliação.</span>
+        <span>Os exemplos desta página são fictícios.</span>
+      </div>
+    </div>
+  </section>
+
+</div>

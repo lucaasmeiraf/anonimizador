@@ -464,6 +464,47 @@ aplicado.
 
 ---
 
+## Defeito conhecido, não resolvido — estouro de 512 tokens no NER
+
+Observado em 2026-08-31, durante a colheita do gate de usabilidade: **1
+documento em 300** produziu
+
+```
+RuntimeError: The size of tensor a (522) must match the size of tensor b (512)
+```
+
+vindo de `modeling_bert.py`. É o limite de 512 posições do BERT sendo
+ultrapassado por um bloco de 522 tokens.
+
+O que está estabelecido:
+
+- **Não é o caso óbvio.** Texto longo com pontuação (730 palavras) e tabela
+  longa sem pontuação nenhuma (1.800 palavras, 200 nomes) foram testados e
+  passam. O gatilho é mais estreito e **não foi reproduzido**.
+- **Uma exceção no reconhecedor de NER sobe** — testado por injeção. Presidio
+  não a engole nesse nível. Na interface isso viraria erro visível, não tela
+  vazia, o que é o comportamento certo.
+- **Mas alguma camada mais funda engoliu esta**, porque a colheita processou
+  os 300 candidatos e terminou com código 0. Ou seja: para aquele documento, o
+  NER contribuiu de forma parcial ou nula, **sem erro visível**.
+
+O terceiro ponto é o que preocupa: é a assinatura do *falso silêncio* — um
+documento em que os nomes não seriam detectados e a tela não diria nada. Não
+está confirmado que chega até a UI nesse formato.
+
+**Impacto no gate de usabilidade: nenhum.** O filtro de "exatamente um
+vazamento" exclui documentos com NER quebrado, porque uma falha de NER produz
+*muitos* nomes sem cobertura, não um. Os 4 documentos da sessão foram
+verificados um a um: 17 a 24 `PERSON` detectados em cada, e em todos o nome do
+gabarito realmente escapa da tarja.
+
+**Próximo passo quando este item for pego:** reproduzir com a semente 20260901
+sobre 300 candidatos isolando o documento que falha, e decidir entre truncar
+com janela deslizante ou fatiar o texto antes do NER. Fatiar é o certo —
+truncar perderia detecção no fim do documento, em silêncio.
+
+---
+
 ## Limitações do que a redação faz hoje, a expor na interface
 
 Não são defeitos novos; são propriedades da Fase 0 que a UI passa a ter
