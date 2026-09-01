@@ -60,6 +60,35 @@ Erro que o humano corrige barato vence erro que o humano precisa caçar.
 > gerar: sem revisão humana, precisão baixa seria um problema sério, não um
 > incômodo. É por isso que D1 e o fluxo de revisão são uma decisão só.
 
+#### D1 confirmada em 2026-08-31, com `make diagnostico` re-executado
+
+O `eval/diagnostico-person.md` que estava em disco era de uma **geração
+anterior do corpus**: 9 dos 14 nomes que ele listava não existem mais nos PDFs
+de `eval/datasets`. A confirmação foi refeita sobre o corpus atual.
+
+> **Cuidado de reprodutibilidade que isto expôs.** Nem o corpus nem os
+> relatórios de avaliação são versionados — os dois são artefatos locais, e
+> `make corpus` gera nomes diferentes a cada execução. Um relatório em disco
+> não descreve necessariamente o corpus em disco. Toda leitura de número deve
+> vir de uma execução feita **depois** da geração do corpus que ela descreve,
+> e é por isso que a confirmação de D1 foi refeita em vez de lida do arquivo.
+
+| Configuração | coberto | coberto em parte | vazou — rótulo errado | vazou — nenhum span |
+|---|---:|---:|---:|---:|
+| `bert-lenerbr` | 636 | 124 | **1** | **0** |
+| `bertimbau-harem` | 741 | 8 | 11 | 1 |
+
+**D1 se mantém, e por uma margem maior do que a registrada acima:**
+`bert-lenerbr` vaza `PERSON` em **1 documento**, `bertimbau-harem` em **9**.
+O critério continua sendo taxa de documento sem vazamento, e ele continua
+apontando para o mesmo lado.
+
+Uma correção ao que `docs/06-resultados-fase-0.md` afirmava: *"em 710
+entidades por configuração, nenhum nome passou despercebido"* deixou de valer
+para o `bertimbau-harem`, que no corpus atual tem 1 caso sem span algum
+(`rh-043`, 'Mateus Câmara'). Para o `bert-lenerbr` a afirmação continua exata:
+**0 nomes não detectados**, e o único vazamento é de rótulo.
+
 ### D2 — Operadores disponíveis: apenas `tarja` e `manter`
 
 `politica.validar_perfil` recusa `pseudonimo` e `mascara` porque a reescrita de
@@ -104,17 +133,59 @@ deixaram sobrenome legível (`Casa Grande`, `Rios`, `ri da Rosa`).
 **D1 confirmada.** Somando vazamento total e exposição parcial real:
 `bert-lenerbr` 3, `bertimbau-harem` 17.
 
-### D4 — Próximo trabalho de detecção: reconhecedor de contexto de pessoa
+### D4 — ~~Reconhecedor de contexto de pessoa~~ → **revisada em 2026-08-31**
 
-Consequência direta de D3, e o item de maior retorno por esforço que restou na
-detecção. Promover `LOCATION`/`ORGANIZATION` a `PERSON` quando houver âncora
-de pessoa na vizinhança (`Sr.`, `Sra.`, `Dr.`, `Dra.`, `portador(a) do`,
-`CPF` adjacente), reusando a máquina que `spans.desambiguar_por_ancora` já
-tem para identificadores de 11 dígitos.
+**A proposta original está registrada abaixo, riscada, porque a medição a
+refutou.** Ela dizia: promover `LOCATION`/`ORGANIZATION` a `PERSON` quando
+houvesse âncora de pessoa na vizinhança (`Sr.`, `Sra.`, `Dr.`, `Dra.`,
+`portador(a) do`, `CPF` adjacente), reusando a máquina de
+`spans.desambiguar_por_ancora`.
 
-Vale a mesma disciplina de lá: **conservador**. Sem âncora, ou com âncoras
-conflitantes, não decide. Trocar um rótulo errado determinístico por um
-imprevisível seria pior — é o rótulo que decide o operador aplicado.
+Antes de implementar, medimos quantos dos vazamentos reais têm essa âncora nos
+45 caracteres anteriores. O resultado, sobre os 12 casos das duas
+configurações no corpus atual:
+
+| | Casos |
+|---|---:|
+| com âncora linguística de pessoa | **0** |
+| âncora cruzada (pertencia a outra linha da tabela) | 1 |
+| cabeçalho de coluna (`Nome | CPF | Nascimento`) | 1 |
+| sem âncora nenhuma | 10 |
+
+**Todos os 12 estão em célula de tabela**, precedidos de CPF, telefone ou data
+de nascimento — não de título. Exemplos, do `rh-028` e do `contrato-030`:
+
+```
+  Tel. (85) 94446-5528
+  Bento da Mata          <- vaza, rotulado LOCATION
+  Laís Rios
+
+  682.960.263-76
+  14/01/1977
+  Dom da Costa           <- vaza, rotulado LOCATION
+```
+
+Isso não é azar de amostra, é o mecanismo: **o NER erra exatamente onde não há
+contexto, e onde não há contexto também não há âncora para uma regra usar.**
+Um reconhecedor de âncora só acrescentaria cobertura onde o NER já acerta — em
+prosa, que responde por 636 dos 761 `PERSON` cobertos e por nenhum vazamento.
+
+Decisão: **não implementar o reconhecedor de âncora.** O ganho medido seria
+0 de 12, contra risco real de falso positivo em construções como
+`Sr. Presidente` e `Dr. Hospital Municipal`.
+
+O conserto certo é **estrutural**, não linguístico: identificar a coluna da
+tabela pelo cabeçalho (`Nome`, `Interessado`, `Servidor`, `Colaborador`,
+`Paciente`) e marcar as células daquela coluna como `PERSON`, usando a
+geometria que o `TextMap` já carrega. Fica registrado como trabalho de fase
+própria, com dois riscos a enfrentar no escopo dele: ajustar-se demais ao
+gerador do corpus sintético, e o custo de tocar `layout.py`, que é o módulo de
+maior risco técnico do sistema.
+
+Vale a disciplina que a proposta original já trazia, e que segue valendo para
+o substituto: **conservador**. Sem sinal claro, não decide. Trocar um rótulo
+errado determinístico por um imprevisível seria pior — é o rótulo que decide o
+operador aplicado.
 
 ---
 
@@ -419,10 +490,18 @@ como opção, não como tarefa.
 
 **Bloco 1 — Diagnóstico e confirmação de D1**
 - [x] `eval/diagnostico_person.py` + alvo `make diagnostico`.
-- [ ] Rodar, ler, e confirmar ou revisar **D1** com os números.
-- [ ] Se "rótulo errado" for a causa dominante: reconhecedor de contexto de
+- [x] Rodar, ler, e confirmar ou revisar **D1** com os números. Re-executado
+      em 2026-08-31 sobre o corpus atual — o relatório versionado era de uma
+      geração anterior. **D1 confirmada**: 1 documento com vazamento contra 9.
+- [x] Se "rótulo errado" for a causa dominante: reconhecedor de contexto de
       pessoa (`Sr.`, `Sra.`, `Dr.`, `portador(a) do`, proximidade de CPF),
       com testes, e re-rodar o `eval`.
+      → **Medido e recusado.** "Rótulo errado" é a causa dominante (12 de 13),
+      mas a âncora que este item pressupõe não existe em nenhum dos casos:
+      todos os 12 estão em célula de tabela, precedidos de CPF, telefone ou
+      data. Ganho medido do reconhecedor: 0 de 12. O conserto certo é
+      estrutural (coluna de tabela pelo cabeçalho) e virou trabalho de fase
+      própria. Ver **D4**, revisada.
 
 **Bloco 2 — API**
 - [x] Sessão de documento com TTL, `DELETE` e varredura de órfãs na subida.
@@ -488,6 +567,10 @@ etapa separada, no ambiente controlado do cliente.
 - Um documento do corpus percorre o fluxo inteiro: upload → revisão → correção
   manual → aprovar → verificar → baixar.
 - **D1 confirmada ou revisada** com os números do `make diagnostico`.
+  ✔ Confirmada em 2026-08-31 (1 documento com vazamento contra 9). No mesmo
+  movimento, **D4 foi revisada**: a causa dos vazamentos é estrutural, não
+  linguística, e o reconhecedor de âncora que ela propunha não corrigiria
+  nenhum caso.
 
 ---
 
