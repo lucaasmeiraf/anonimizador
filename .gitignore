@@ -5,6 +5,13 @@ anonimizador-poc/eval/datasets/
 anonimizador-poc/eval/report.md
 anonimizador-poc/eval/diagnostico-person.md
 
+# Gate de usabilidade: os documentos da sessao e o gabarito sao artefatos
+# gerados, e o gabarito e a resposta do teste — nao pode ficar a um clique de
+# quem vai participar. O `registro.csv` fica de fora destas regras de
+# proposito: ele e o resultado da medicao, e resultado se versiona.
+anonimizador-poc/eval/gate-usabilidade/documentos/
+anonimizador-poc/eval/gate-usabilidade/gabarito-NAO-ABRIR-ANTES.json
+
 __pycache__/
 *.py[cod]
 .pytest_cache/

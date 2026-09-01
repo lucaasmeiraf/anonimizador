@@ -79,6 +79,14 @@ services:
     entrypoint: ["python", "/app/eval/diagnostico_person.py"]
     command: ["--datasets", "/app/eval/datasets", "--out", "/app/eval/diagnostico-person.md"]
 
+  # Gate de usabilidade: monta a sessao com pessoas. Nao mede nada sozinho —
+  # colhe documentos em que o modelo real deixa um nome sem tarja, guarda o
+  # gabarito e apura o registro depois. Ver eval/gate-usabilidade-roteiro.md.
+  gate-usabilidade:
+    <<: *base
+    entrypoint: ["python", "/app/eval/gate_usabilidade.py"]
+    command: ["--preparar", "--out", "/app/eval/gate-usabilidade"]
+
   # --------------------------------------------------------------------
   # Interface de revisao
   # --------------------------------------------------------------------

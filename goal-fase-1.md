@@ -67,11 +67,18 @@ anterior do corpus**: 9 dos 14 nomes que ele listava não existem mais nos PDFs
 de `eval/datasets`. A confirmação foi refeita sobre o corpus atual.
 
 > **Cuidado de reprodutibilidade que isto expôs.** Nem o corpus nem os
-> relatórios de avaliação são versionados — os dois são artefatos locais, e
-> `make corpus` gera nomes diferentes a cada execução. Um relatório em disco
-> não descreve necessariamente o corpus em disco. Toda leitura de número deve
-> vir de uma execução feita **depois** da geração do corpus que ela descreve,
-> e é por isso que a confirmação de D1 foi refeita em vez de lida do arquivo.
+> relatórios de avaliação são versionados — os dois são artefatos locais.
+>
+> `make corpus` **é** determinístico: a semente é fixa (`--seed`, padrão
+> `20260829`). O que muda os nomes é alterar o **gerador**, porque cada bloco
+> novo consome sorteios e desloca toda a sequência seguinte — e foi o que
+> aconteceu quando `generate_corpus.py` ganhou os blocos de tabela e de duas
+> colunas. Mesma semente, gerador diferente, nomes diferentes.
+>
+> O efeito prático é o mesmo: um relatório em disco não descreve
+> necessariamente o corpus em disco. Toda leitura de número deve vir de uma
+> execução feita **depois** da geração do corpus que ela descreve, e é por
+> isso que a confirmação de D1 foi refeita em vez de lida do arquivo.
 
 | Configuração | coberto | coberto em parte | vazou — rótulo errado | vazou — nenhum span |
 |---|---:|---:|---:|---:|
@@ -531,6 +538,20 @@ como opção, não como tarefa.
       quando reprova, **não existe link de download**.
 - [x] Aviso visível das limitações (links, sumário, metadados, assinatura).
 - [ ] Medir o gate de usabilidade: um revisor acha a tarja faltante?
+      **Instrumento pronto** (`eval/gate_usabilidade.py`, alvos
+      `gate-usabilidade` e `gate-usabilidade-apurar`, roteiro em
+      `eval/gate-usabilidade-roteiro.md`). Falta a medição, que depende de 3 a
+      5 pessoas que não conheçam os documentos — nem eu nem quem escreveu o
+      código servem como sujeito.
+
+      O vazamento não é simulado: o instrumento gera candidatos, roda o
+      pipeline real e fica só com os documentos em que o `bert-lenerbr` de
+      fato deixa um `PERSON` sem cobertura. Suprimir um span na aplicação
+      para "criar" a falha exigiria um gancho de teste no caminho do gate,
+      que é onde este sistema não pode ter gancho.
+
+      O aproveitamento medido é de ~1 documento em 50, e isso é a medida de
+      quão bom o modelo é — não um defeito do instrumento.
 
 **Bloco 4 — Testes** — `tests/test_web.py`, 23 testes
 - [x] `download` recusa antes de aprovar (409) e depois de qualquer edição.

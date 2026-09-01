@@ -6,7 +6,7 @@
 COMPOSE := docker compose
 GPU     := -f docker-compose.yml -f docker-compose.gpu.yml
 
-.PHONY: help build test test-all corpus eval eval-fast diagnostico ui ui-down ui-proof offline-proof shell demo clean gpu-build gpu-eval
+.PHONY: help build test test-all corpus eval eval-fast diagnostico gate-usabilidade gate-usabilidade-apurar ui ui-down ui-proof offline-proof shell demo clean gpu-build gpu-eval
 
 help:
 	@echo ""
@@ -17,6 +17,8 @@ help:
 	@echo "  eval           avaliacao completa nas 3 configuracoes de NER"
 	@echo "  eval-fast      avaliacao so com spaCy (iteracao rapida)"
 	@echo "  diagnostico    por que PERSON vaza: nao detectado ou rotulo errado"
+	@echo "  gate-usabilidade         monta a sessao de revisao com pessoas"
+	@echo "  gate-usabilidade-apurar  le o registro.csv preenchido"
 	@echo "  ui             sobe a interface de revisao em http://127.0.0.1:8000"
 	@echo "  ui-down        derruba a interface"
 	@echo "  ui-proof       prova que a UI responde E nao tem egress"
@@ -48,6 +50,14 @@ eval-fast:
 
 diagnostico:
 	$(COMPOSE) run --rm diagnostico
+
+# Nao mede sozinho: prepara a medicao com pessoas e apura o resultado.
+# O roteiro da sessao esta em eval/gate-usabilidade-roteiro.md.
+gate-usabilidade:
+	$(COMPOSE) run --rm gate-usabilidade
+
+gate-usabilidade-apurar:
+	$(COMPOSE) run --rm gate-usabilidade --apurar /app/eval/gate-usabilidade/registro.csv
 
 ui:
 	$(COMPOSE) up -d ui ui-proxy

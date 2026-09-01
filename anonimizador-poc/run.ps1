@@ -4,7 +4,7 @@
 #   .\run.ps1 eval
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build','test','test-all','corpus','eval','eval-fast','diagnostico','ui','ui-down','ui-proof','offline-proof',
+    [ValidateSet('build','test','test-all','corpus','eval','eval-fast','diagnostico','gate-usabilidade','gate-usabilidade-apurar','ui','ui-down','ui-proof','offline-proof',
                  'demo','shell','gpu-build','gpu-eval','clean','help')]
     [string]$Target = 'help'
 )
@@ -22,6 +22,8 @@ switch ($Target) {
     'eval'          { docker compose run --rm eval }
     'eval-fast'     { docker compose run --rm cli eval --ner spacy }
     'diagnostico'   { docker compose run --rm diagnostico }
+    'gate-usabilidade' { docker compose run --rm gate-usabilidade }
+    'gate-usabilidade-apurar' { docker compose run --rm gate-usabilidade --apurar /app/eval/gate-usabilidade/registro.csv }
     'ui'            {
         docker compose up -d ui ui-proxy
         Write-Host ''
@@ -74,6 +76,8 @@ switch ($Target) {
         Write-Host '  eval           avaliacao completa nas 3 configuracoes de NER'
         Write-Host '  eval-fast      avaliacao so com spaCy (iteracao rapida)'
         Write-Host '  diagnostico    por que PERSON vaza: nao detectado ou rotulo errado'
+        Write-Host '  gate-usabilidade         monta a sessao de revisao com pessoas'
+        Write-Host '  gate-usabilidade-apurar  le o registro.csv preenchido'
         Write-Host '  ui             sobe a interface em http://127.0.0.1:8000'
         Write-Host '  ui-down        derruba a interface'
         Write-Host '  ui-proof       prova que a UI responde E nao tem egress'
