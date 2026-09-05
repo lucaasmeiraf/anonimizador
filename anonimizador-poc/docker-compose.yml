@@ -100,7 +100,42 @@ services:
     command: ["anonimizador.web.app:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       ANON_NER: "${ANON_NER:-bert-lenerbr}"
+      ANON_ANALISE_URL: "http://analise:8100"
     expose: ["8000"]
+
+  # Analise por LLM externa. A SEGUNDA peca com saida de rede, e a unica que
+  # faz conteudo sair da maquina.
+  #
+  # Nao usa `*imagem`: aquele bloco monta ./out, que e onde os originais em
+  # claro vivem durante a revisao. Aqui o mount e so ./src, e so leitura. O
+  # servico recebe o texto ja pseudonimizado e ja verificado pelo `ui`, e nao
+  # tem como alcancar o documento de origem nem que queira.
+  #
+  # A chave do OpenRouter vive AQUI e so aqui: o componente que guarda a
+  # credencial e o pequeno, nao o que carrega torch e transformers.
+  analise:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: anonimizador-poc:fase0
+    working_dir: /app
+    volumes:
+      - ./src:/app/src:ro
+    # Defesa em profundidade sobre o `.dockerignore`: mesmo que um build futuro
+    # volte a assar ./out na imagem, este tmpfs cobre o caminho com um sistema
+    # de arquivos vazio e em memoria. O servico com egress nao alcanca
+    # documento em claro por nenhum dos dois caminhos.
+    tmpfs:
+      - /app/out
+      - /app/data
+    networks: [interna, externa]
+    entrypoint: ["python", "-m", "anonimizador.web.analise"]
+    command: ["--escuta", "0.0.0.0:8100"]
+    environment:
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.5}"
+      ANON_ANALISE_MAX_CHARS: "${ANON_ANALISE_MAX_CHARS:-200000}"
+    expose: ["8100"]
 
   # A unica peca com saida de rede. Nao processa documento: copia bytes.
   # Publicado so em 127.0.0.1 — nao escuta em interface externa da maquina.

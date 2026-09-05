@@ -6,7 +6,7 @@
 COMPOSE := docker compose
 GPU     := -f docker-compose.yml -f docker-compose.gpu.yml
 
-.PHONY: help build test test-all corpus eval eval-fast diagnostico gate-usabilidade gate-usabilidade-apurar ui ui-down ui-proof offline-proof shell demo clean gpu-build gpu-eval
+.PHONY: help build test test-all corpus eval eval-fast diagnostico gate-usabilidade gate-usabilidade-apurar ui ui-down ui-proof ui-llm llm-proof offline-proof shell demo clean gpu-build gpu-eval
 
 help:
 	@echo ""
@@ -22,6 +22,8 @@ help:
 	@echo "  ui             sobe a interface de revisao em http://127.0.0.1:8000"
 	@echo "  ui-down        derruba a interface"
 	@echo "  ui-proof       prova que a UI responde E nao tem egress"
+	@echo "  ui-llm         sobe a UI + o servico de analise por LLM externa"
+	@echo "  llm-proof      prova que o ui segue sem egress e que o analise nao ve o original"
 	@echo "  offline-proof  prova que o pipeline roda sem rede"
 	@echo "  demo           redige um documento do corpus e mostra o resultado"
 	@echo "  shell          shell interativo no container"
@@ -82,6 +84,27 @@ ui-proof:
 	@echo ""
 	@echo "--- metade 2: o servico ui nao tem egress ---"
 	$(COMPOSE) exec -T ui python -m anonimizador.web.prova_rede
+
+# Sobe a UI com o servico de analise. A chave sai do .env.
+ui-llm:
+	$(COMPOSE) up -d ui ui-proxy analise
+	@echo ""
+	@echo "  interface : http://127.0.0.1:8000"
+	@$(COMPOSE) exec -T analise python -c "import os;print('  chave     :', 'configurada' if os.getenv('OPENROUTER_API_KEY') else 'AUSENTE -- copie .env.example para .env')"
+
+# A prova que importa depois de abrir a rede: o servico que processa documento
+# continua sem egress, mesmo com o servico de analise no ar ao lado dele.
+llm-proof:
+	$(COMPOSE) up -d ui analise
+	@echo ""
+	@echo "--- 1: o servico ui NAO tem egress ---"
+	$(COMPOSE) exec -T ui python -m anonimizador.web.prova_rede
+	@echo ""
+	@echo "--- 2: o servico analise NAO enxerga documento em claro ---"
+	$(COMPOSE) exec -T analise python -m anonimizador.web.prova_isolamento
+	@echo ""
+	@echo "--- 3: o servico analise TEM egress (e o unico que precisa) ---"
+	$(COMPOSE) exec -T analise python -c "import socket; socket.create_connection(('1.1.1.1',443),timeout=5).close(); print('  egress presente: ok')"
 
 offline-proof:
 	$(COMPOSE) run --rm offline-proof

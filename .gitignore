@@ -20,3 +20,8 @@ __pycache__/
 
 # Saidas de anonimizacao geradas em testes
 *.anonimizado.pdf
+
+# Credenciais. O .env carrega a chave do OpenRouter; o .env.example, que e
+# versionado, tem o formato e nenhuma chave.
+.env
+anonimizador-poc/.env

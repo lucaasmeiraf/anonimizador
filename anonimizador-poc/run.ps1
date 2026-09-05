@@ -4,7 +4,7 @@
 #   .\run.ps1 eval
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build','test','test-all','corpus','eval','eval-fast','diagnostico','gate-usabilidade','gate-usabilidade-apurar','ui','ui-down','ui-proof','offline-proof',
+    [ValidateSet('build','test','test-all','corpus','eval','eval-fast','diagnostico','gate-usabilidade','gate-usabilidade-apurar','ui','ui-down','ui-proof','ui-llm','llm-proof','offline-proof',
                  'demo','shell','gpu-build','gpu-eval','clean','help')]
     [string]$Target = 'help'
 )
@@ -33,6 +33,24 @@ switch ($Target) {
         Write-Host ''
     }
     'ui-down'       { docker compose down --remove-orphans }
+    'ui-llm'        {
+        docker compose up -d ui ui-proxy analise
+        Write-Host ''
+        Write-Host '  interface : http://127.0.0.1:8000'
+        docker compose exec -T analise python -c "import os;print('  chave     :', 'configurada' if os.getenv('OPENROUTER_API_KEY') else 'AUSENTE -- copie .env.example para .env')"
+    }
+    'llm-proof'     {
+        docker compose up -d ui analise
+        Write-Host ''
+        Write-Host '--- 1: o servico ui NAO tem egress ---'
+        docker compose exec -T ui python -m anonimizador.web.prova_rede
+        Write-Host ''
+        Write-Host '--- 2: o servico analise NAO enxerga a pasta das sessoes ---'
+        docker compose exec -T analise python -c "import pathlib,sys; p=pathlib.Path('/app/out'); sys.exit(1) if p.exists() and any(p.iterdir()) else print('  /app/out inacessivel ou vazio: ok')"
+        Write-Host ''
+        Write-Host '--- 3: o servico analise TEM egress (e o unico que precisa) ---'
+        docker compose exec -T analise python -c "import socket; socket.create_connection(('1.1.1.1',443),timeout=5).close(); print('  egress presente: ok')"
+    }
     'ui-proof'      {
         docker compose up -d ui ui-proxy
         Write-Host 'aguardando a UI subir...'
@@ -81,6 +99,8 @@ switch ($Target) {
         Write-Host '  ui             sobe a interface em http://127.0.0.1:8000'
         Write-Host '  ui-down        derruba a interface'
         Write-Host '  ui-proof       prova que a UI responde E nao tem egress'
+        Write-Host '  ui-llm         sobe a UI + o servico de analise por LLM externa'
+        Write-Host '  llm-proof      prova que o ui segue sem egress e o analise nao ve o original'
         Write-Host '  offline-proof  prova que o pipeline roda sem rede'
         Write-Host '  demo           redige um documento do corpus'
         Write-Host '  shell          shell interativo no container'
