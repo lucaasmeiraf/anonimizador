@@ -28,6 +28,7 @@ from fastapi.testclient import TestClient
 
 from anonimizador.spans import Span
 from anonimizador.web import app as app_mod
+from anonimizador.web.sessao import SpanUI
 
 # Texto com PII sintética. O CPF tem checksum válido; os nomes são fictícios.
 LINHAS = [
@@ -880,3 +881,54 @@ def test_pagina_png_renderiza(cliente, pdf):
 def test_pagina_inexistente_da_404(cliente, pdf):
     doc = _enviar(cliente, pdf)
     assert cliente.get(f"/api/doc/{doc['doc_id']}/pagina/99.png").status_code == 404
+
+
+# --------------------------------------------------------------------------
+# Diagnóstico do vazamento — o que a tela diz ao revisor
+# --------------------------------------------------------------------------
+def test_dissecacao_acha_valor_que_sobreviveu_sem_pontuacao(cliente, tmp_pdf):
+    """O segundo defeito de 2026-09-05, e o mais caro dos dois.
+
+    O `verify` procura o valor em todas as formas plausíveis — inclusive só
+    dígitos. A dissecação procurava a forma **literal**, com pontuação. Quando
+    um CNPJ tarjado numa passagem sobrevivia noutra escrito como
+    `61904327000118`, o `verify` reprovava (certo) mas a dissecação não
+    achava o valor no texto e classificava como "só na estrutura do PDF".
+
+    A consequência não é cosmética: essa classificação diz ao usuário
+    "defeito do redator, você não conserta sozinho", quando a verdade era
+    "outra ocorrência, tarje todas em um clique". Manda a pessoa para o
+    caminho oposto do conserto.
+    """
+    linhas = [
+        "PROCESSO ADMINISTRATIVO",
+        "CNPJ ficticio: 61.904.327/0001-18",
+        "Chave PIX: 61904327000118",
+    ]
+    caminho = tmp_pdf(linhas, nome="pix.pdf")
+    doc = _enviar(cliente, caminho, nome="pix.pdf")
+
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    # Tarja só a forma mascarada, reproduzindo a detecção parcial.
+    texto = sessao.tm.text
+    inicio = texto.find("61.904.327/0001-18")
+    assert inicio != -1
+    sessao.spans.clear()
+    sessao.spans["s1"] = SpanUI(
+        id="s1",
+        entity="CNPJ",
+        score=1.0,
+        start=inicio,
+        end=inicio + len("61.904.327/0001-18"),
+        valor="61.904.327/0001-18",
+    )
+
+    relatorio = sessao.aprovar()
+    assert relatorio["verificacao_ok"] is False
+
+    ocorrencia = relatorio["ocorrencias"][0]
+    assert ocorrencia["visivel_no_texto"] is True, (
+        "classificado como 'só na estrutura' — manda o usuário consertar o "
+        "redator quando o conserto é tarjar a outra ocorrência"
+    )
+    assert ocorrencia["ocorrencias_no_texto"] >= 1

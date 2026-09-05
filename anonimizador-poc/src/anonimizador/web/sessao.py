@@ -41,7 +41,13 @@ from ..pdf_redactor import redact_document
 from ..politica import MANTER, TARJA, PerfilPolitica, validar_perfil
 from ..pseudonimo import pseudonimizar_texto, tokens_de
 from ..spans import Span, resolver_sobreposicoes
-from ..verifier import verify, verify_texto
+from ..verifier import (
+    SEPARADORES_DE_ID,
+    _normalizar as _normalizar_verificacao,
+    _variantes,
+    verify,
+    verify_texto,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -677,8 +683,31 @@ class Sessao:
         except Exception:  # noqa: BLE001
             logger.exception("sessao %s: falha ao reabrir o PDF reprovado", self.doc_id)
 
+        # A mesma busca por variantes que o `verify` usa. Comparar literal aqui
+        # era um defeito com consequência direta: medido em 2026-09-05, um CNPJ
+        # tarjado numa passagem sobrevivia noutra escrito só com dígitos
+        # (`Chave PIX: 61904327000118`). O `verify` o encontrava pela variante
+        # numérica e reprovava — certo —, mas a dissecação procurava a forma
+        # literal com pontuação, não achava, e classificava como "só na
+        # estrutura do PDF".
+        #
+        # A classificação errada manda o usuário para o caminho oposto do
+        # conserto: ela diz "defeito do redator, você não conserta sozinho",
+        # quando a verdade era "outra ocorrência, tarje todas em um clique".
+        texto_norm = _normalizar_verificacao(texto_final)
+        texto_ids = SEPARADORES_DE_ID.sub("", texto_final)
+
+        def _achar(valor: str) -> int:
+            """Quantas vezes o valor aparece no texto, em qualquer forma."""
+            for forma in _variantes(valor):
+                alvo = texto_ids if forma.isdigit() else texto_norm
+                if forma in alvo:
+                    return alvo.count(forma)
+            return 0
+
         por_valor: dict[str, dict] = {}
         for leak in leaks:
+            ocorrencias = _achar(leak.valor)
             item = por_valor.setdefault(
                 leak.valor,
                 {
@@ -686,8 +715,8 @@ class Sessao:
                     "vetor": leak.vetor,
                     "vetores": [],
                     "objeto": "",
-                    "visivel_no_texto": leak.valor in texto_final,
-                    "ocorrencias_no_texto": texto_final.count(leak.valor),
+                    "visivel_no_texto": ocorrencias > 0,
+                    "ocorrencias_no_texto": ocorrencias,
                 },
             )
             if leak.vetor not in item["vetores"]:
