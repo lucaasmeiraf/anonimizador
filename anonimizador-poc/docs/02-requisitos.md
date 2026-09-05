@@ -104,6 +104,27 @@ auditoria restrito, nunca para log de aplicação. Está em
 | RN-06 | Atribuição do `pt_core_news_lg` (CC BY-SA 4.0) na documentação do produto | Pendente |
 | RN-07 | Conferir as citações normativas do documento de ideia antes de usá-las em material comercial | **Não verificado** |
 | RN-08 | Todo artefato entregável passa por verificação própria antes de ser servido — não só o PDF | Atendido (Fase 2A) |
+| RN-09 | O corpus sintético precisa gerar campo de chave PIX | **Pendente — lacuna de medição** |
+
+### RN-09 — o corpus não exercita a âncora de PIX
+
+Em 2026-09-05 um documento real de teste reprovou a verificação: o mesmo CNPJ
+aparecia mascarado sob a âncora `CNPJ:` e cru sob `Chave PIX:`, e só o primeiro
+era detectado. O conserto foi acrescentar `chave pix` às âncoras de CPF e CNPJ.
+
+O `make eval` mediu o custo e não achou nenhum: CPF e CNPJ seguem com F1
+estrito 1.000 nas três configurações, então a âncora não introduziu falso
+positivo em 50 documentos e 2.546 entidades.
+
+**Mas ele também não mediu o ganho**, e isso precisa ficar escrito:
+`generate_corpus.py` não emite campo de chave PIX, então o corpus não contém o
+caso que o conserto resolve. A evidência do ganho é o documento real mais
+`tests/test_chave_pix.py`, não a métrica.
+
+Enquanto o gerador não emitir esse campo, uma regressão nessa âncora passaria
+pelo eval sem aparecer. É a mesma classe de silêncio que o
+`docs/05-politica-llm.md` §3.2 descreve para identificador indireto: número
+alto não é evidência de ausência de risco quando o gabarito não contém o caso.
 
 ### RN-01 e RN-02, em uma frase
 

@@ -223,6 +223,7 @@ Esta lista é parte da ferramenta, não uma ressalva escondida no rodapé.
 | **Zera as propriedades do arquivo** | Autor, título, data de criação, programa que gerou. |
 | **Não desfaz** | Ver a primeira garantia. O que devolve o original é o original. |
 | **Não altera o layout** | Página, fontes e diagramação ficam idênticas. Isso é intencional. |
+| **Identificador fictício sem rótulo pode escapar** | Um CPF ou CNPJ com dígito verificador inválido — comum em minuta, modelo e material de treinamento — só é reconhecido se houver uma palavra próxima que o identifique (`CPF:`, `CNPJ:`, `Chave PIX:`). Escrito sem pontuação e sem rótulo, ele é indistinguível de um número de protocolo, e a ferramenta o ignora de propósito, para não tarjar toda numeração do documento. |
 
 ---
 

@@ -107,7 +107,19 @@ def cmd_redact(args: argparse.Namespace) -> int:
     print(f"  RESULTADO     : {len(relatorio.leaks)} VAZAMENTO(S)\n")
     for leak in relatorio.leaks[:30]:
         print(f"    - {leak}")
-    print()
+
+    # Apaga o arquivo reprovado, como `Sessao.aprovar` já fazia no caminho da
+    # interface. Deixá-lo em disco era a falha mais perigosa possível aqui: o
+    # comando devolve 1 e o usuário vê "VAZAMENTO", mas fica no disco um
+    # arquivo com nome de anonimizado e conteúdo recuperável — pronto para ser
+    # anexado a um e-mail semanas depois, sem ninguém lembrar que reprovou.
+    #
+    # Encontrado em 2026-09-05: um `.anonimizado.pdf` na raiz do projeto ainda
+    # continha o CNPJ que a redação não pegou. A invariante 2 do CLAUDE.md
+    # ("nada é entregue sem verificação aprovada") vale para todo caminho de
+    # saída, e a CLI é um deles.
+    Path(args.saida).unlink(missing_ok=True)
+    print(f"  arquivo {args.saida} apagado: nao existe entregavel reprovado.\n")
     return 1
 
 
