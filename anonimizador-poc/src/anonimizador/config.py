@@ -36,6 +36,39 @@ ENTIDADES_ATIVAS = ENTIDADES_COM_GATE + ENTIDADES_MEDIDAS + ENTIDADES_BEST_EFFOR
 ENTIDADES_REDIGIDAS = ENTIDADES_COM_GATE + ENTIDADES_MEDIDAS + ("ENDERECO",)
 
 # --------------------------------------------------------------------------
+# Siglas do token de pseudônimo
+# --------------------------------------------------------------------------
+# O tipo tem de sobreviver ao token: quem lê `[P-7F3A]` precisa saber que ali
+# havia uma pessoa e não um CNPJ. Sem isso o token vira ruído opaco e metade
+# da legibilidade que motivou trocar a tarja pelo token se perde.
+#
+# Curtas de propósito. Quando a escrita do token dentro do PDF existir
+# (A3-A8), o token precisa caber na caixa do valor original — `[PESSOA-7F3A]`
+# já estoura uma caixa de 42pt, medido na sondagem de 2026-09-01.
+#
+# Entidade ausente daqui faz `AlocadorDeToken.token_de` levantar erro, em vez
+# de cair num prefixo genérico: prefixo genérico silencioso é como uma
+# entidade nova entra no sistema sem ninguém decidir seu tratamento.
+SIGLAS_TOKEN: dict[str, str] = {
+    "PERSON": "P",
+    "CPF": "CPF",
+    "CNPJ": "CNPJ",
+    "RG": "RG",
+    "CEP": "CEP",
+    "TELEFONE": "TEL",
+    "EMAIL": "MAIL",
+    "CNS": "CNS",
+    "PIS_PASEP": "PIS",
+    "PROCESSO_CNJ": "PROC",
+    "CNH": "CNH",
+    "TITULO_ELEITOR": "TE",
+    "ENDERECO": "END",
+    "ORGANIZATION": "ORG",
+    "LOCATION": "LOC",
+    "DATE_TIME": "DATA",
+}
+
+# --------------------------------------------------------------------------
 # Limiar de score
 # --------------------------------------------------------------------------
 # 0.35 deixa passar tudo que teve checksum confirmado (score 1.0) e tudo que

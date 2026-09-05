@@ -185,6 +185,60 @@ def _descrever_objeto(doc: "fitz.Document", xref: int) -> str:
     return "/".join(dict.fromkeys(partes))
 
 
+def verify_texto(
+    texto: str,
+    valores: Iterable[str],
+    tokens: Iterable[str] = (),
+    caminho: str = "<texto>",
+) -> VerificationReport:
+    """Gate do artefato de texto pseudonimizado.
+
+    A invariante 2 do CLAUDE.md não fala em PDF, fala em **entregável**: nada
+    sai sem ``verify().ok``. O texto pseudonimizado é um entregável novo, e
+    sem um gate próprio ele seria exatamente a rota de download sem
+    verificação que o projeto proíbe.
+
+    Duas diferenças em relação a ``verify``, e as duas precisam ficar ditas
+    em vez de subentendidas:
+
+    **Roda um vetor, não dez.** Os outros nove descrevem estruturas de PDF —
+    anotações, AcroForm, XMP, streams — que não existem numa string. O
+    relatório nomeia o que executou, para ninguém ler "verificado" e supor
+    dez. Isso não é uma verificação mais fraca: é a verificação completa do
+    que este artefato tem.
+
+    **Confere presença do token, não só ausência do valor.** É a aresta 1 da
+    sondagem de 2026-09-01, trazida para o caminho de texto: se o valor sai e
+    o token não entra, a checagem de ausência diz "limpo" — porque o original
+    de fato sumiu — e o gate aprova um documento mutilado. Falso silêncio com
+    o gate aprovando é a pior combinação possível neste sistema.
+    """
+    agulhas = {
+        v: _variantes(v)
+        for v in {x.strip() for x in valores if x and len(x.strip()) >= TAMANHO_MINIMO}
+    }
+    leaks = _procurar(agulhas, texto, "texto")
+    vetores = ["texto"]
+
+    esperados = sorted({t for t in tokens if t})
+    if esperados:
+        for token in esperados:
+            if token not in texto:
+                # `valor` aqui é o token, não dado pessoal — é seguro exibir,
+                # e é a única informação que torna o defeito diagnosticável.
+                leaks.append(
+                    Leak("token-ausente", token, "substituicao perdida no texto")
+                )
+        vetores.append("tokens-presentes")
+
+    return VerificationReport(
+        caminho=caminho,
+        valores_checados=len(agulhas),
+        vetores_executados=vetores,
+        leaks=leaks,
+    )
+
+
 def verify(caminho: str | Path, valores: Iterable[str]) -> VerificationReport:
     """Confere que nenhum dos ``valores`` sobrevive no PDF final."""
     caminho = str(caminho)
