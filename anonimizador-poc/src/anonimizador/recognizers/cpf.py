@@ -18,6 +18,11 @@ PATTERNS = [
 CONTEXT = [
     "cpf", "c.p.f", "cadastro de pessoa física", "cadastro de pessoas físicas",
     "inscrito no cpf", "portador do cpf", "cpf/mf", "cpf nº", "cpf n°",
+    # Pelo mesmo motivo do CNPJ: uma chave PIX de pessoa física é quase sempre
+    # o CPF, e nesse campo ele aparece sem pontuação — a forma que o `base.py`
+    # descarta quando não há âncora nem checksum válido. "chave pix" e não
+    # "pix", porque a janela casa por substring e pegaria "pixel".
+    "chave pix", "chave-pix",
 ]
 
 
