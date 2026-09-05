@@ -5,7 +5,14 @@ saia da sua máquina.**
 
 Você envia um PDF, a ferramenta marca o que identificou como dado pessoal,
 você confere e corrige a proposta na tela, e só então o arquivo protegido é
-gerado. Nada é enviado para a internet em nenhum momento.
+gerado. O processamento é inteiramente local: o serviço que lê o seu documento
+roda sem interface de rede.
+
+> Há **um** recurso opcional que usa a internet — a análise por IA, que envia
+> o *texto já protegido* (nunca o PDF, nunca o original) a um modelo externo.
+> Ele só funciona se você configurar uma chave de API, e está descrito com os
+> riscos [mais abaixo](#análise-por-ia--opcional-e-o-que-ela-custa). Desligado,
+> nada sai da máquina em nenhum momento.
 
 ---
 
@@ -25,9 +32,11 @@ praticamente todo vazamento público de documento "tarjado" que virou notícia.
 
 **Mandar para um serviço na nuvem.** Resolve o problema técnico e cria outro:
 o documento com os dados sensíveis foi entregue a um terceiro, muitas vezes
-fora do país, antes de ser protegido.
+fora do país, **antes** de ser protegido.
 
-Esta ferramenta não faz nenhum dos dois.
+Esta ferramenta não faz nenhum dos dois. A proteção acontece na sua máquina, e
+o que eventualmente sai — se você ligar a análise por IA — é o texto depois de
+protegido e conferido, nunca antes.
 
 ---
 
@@ -57,6 +66,17 @@ alguém quisesse enviar o arquivo para fora, não existe caminho por onde.
 Isso é verificável, e não apenas afirmado. Um comando (`ui-proof`) tenta
 alcançar a internet de dentro do serviço que processa documentos e **falha o
 teste** se conseguir.
+
+> **Uma exceção, e ela é sua para ligar ou não.** Existe um recurso opcional de
+> análise por IA, em que o **texto com código** — nunca o PDF, nunca o
+> original — é enviado a um modelo externo. Ele vive num componente separado,
+> que não tem acesso ao seu documento original e não faz nada além de repassar
+> o texto. Se você não configurar uma chave de API, ele não faz nada.
+>
+> Quando você usa esse recurso, a garantia acima muda de natureza para aquele
+> texto: sai de "não existe caminho para fora" para "o que sai já passou por
+> duas conferências". Leia a seção sobre isso antes de decidir — a diferença é
+> real e está descrita sem maquiagem.
 
 ### 3. Nada é entregue sem conferência independente
 
@@ -127,6 +147,48 @@ Os dois arquivos passam por conferência antes de serem liberados. A do texto
 confere duas coisas: que nenhum valor original sobreviveu, e que nenhum código
 se perdeu no caminho — porque um arquivo em que o nome sumiu mas o código não
 entrou pareceria correto e não seria.
+
+### Análise por IA — opcional, e o que ela custa
+
+Você pode pedir que um modelo de linguagem analise o documento: resumir,
+localizar, explicar o andamento. **O que é enviado é o texto com código**, e é
+por isso que o código existe — um PDF tarjado chega ao modelo como
+`O servidor ⏎ compareceu`, sem nem indicar que havia alguém ali, e é assim que
+se produz uma análise inventada.
+
+Como ligar:
+
+```
+cd anonimizador-poc
+cp .env.example .env      # cole sua chave do OpenRouter em OPENROUTER_API_KEY
+make ui-llm
+```
+
+Sem chave, o recurso simplesmente não funciona — não há envio silencioso.
+
+**Antes de enviar, três travas correm nesta ordem:** o texto precisa ter
+passado pela conferência; a detecção roda **de novo** sobre o texto de saída,
+com critério mais rigoroso, e qualquer coisa encontrada **cancela o envio**; e
+o envio é sempre uma ação por documento, nunca uma configuração que fica
+ligada. Cada envio é registrado — quando, para onde, qual modelo, quantos
+caracteres. O conteúdo não é registrado.
+
+**E o que isso custa, dito sem maquiagem.** Nenhuma dessas travas prova que
+*tudo* que era dado pessoal foi encontrado — elas provam que o que a ferramenta
+decidiu remover não sobreviveu. A detecção tem dois furos medidos: um nome
+escapa em cerca de 1 documento a cada 50, e identificador indireto por contexto
+(*"o único servidor cego da repartição"*) não é detectado de forma alguma, e
+nenhum código o resolve, porque não há o que substituir.
+
+Sem envio externo, um nome que escapou é um defeito que fica na sua máquina e
+você corrige na próxima revisão. **Com envio externo, o mesmo defeito vira
+incidente com terceiro**: o dado saiu, pode ter sido registrado ou usado em
+treino, e apagar depois não desfaz o envio.
+
+Por isso, duas recomendações concretas: revise antes de enviar, e configure a
+retenção na sua conta do provedor (`openrouter.ai/settings/privacy`) — alguns
+provedores treinam com o que recebem, e isso é decisão sua, não deste
+software.
 
 ### O que ele identifica sozinho
 
@@ -272,7 +334,7 @@ documentada e medida antes de a seguinte começar.
 | **1** — Interface de revisão | "uma pessoa consegue confiar e assinar embaixo?" | 🔶 quase concluída — falta medir o gate de usabilidade com pessoas reais |
 | **2A** — Código no lugar do nome | "dá para o documento continuar legível sem expor ninguém?" | ✅ concluída — saída de texto, sem chave e sem cofre |
 | **2B** — Reversibilidade sob chave | "dá para desfazer, com controle?" | ⛔ encerrada — guardar o original resolve, sem custo legal |
-| **3** — Perímetro de rede | "vale abrir a rede para análise por IA?" | 📄 desenhada, não decidida |
+| **3** — Perímetro de rede | "vale abrir a rede para análise por IA?" | 🔶 decidida e construída — falta a tela e a retenção no provedor |
 
 **Antes de qualquer entrega comercial**, duas pendências de licenciamento
 precisam ser resolvidas: a biblioteca de PDF (AGPL ou licença comercial) e o

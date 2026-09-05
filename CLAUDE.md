@@ -60,10 +60,26 @@ já produziu, ou produziria, um dos três modos de falha acima.
    política.** Os spans são os mesmos e a política é a mesma; muda só o que
    preenche o buraco em cada artefato.
 6. **O perímetro de rede é a promessa central do produto.** Serviços de lote
-   rodam em `network_mode: none`; o `ui` vive em rede `internal: true`; o
-   `ui-proxy` é o único com egress e **não processa documento** — só copia
-   bytes. Não adicionar dependência que precise de rede em runtime, nem
-   chamada externa em nenhum caminho de documento.
+   rodam em `network_mode: none`; o `ui` vive em rede `internal: true` e
+   **nunca** ganha egress. Não adicionar dependência que precise de rede em
+   runtime dentro do `ui`.
+
+   Exatamente **dois** componentes têm saída, e os dois são pequenos de
+   propósito — a regra é que quem tem rede não tem árvore de dependências:
+
+   | | o que faz | vê o original? |
+   |---|---|---|
+   | `ui-proxy` | copia bytes entre a porta e o `ui` | passa por ele |
+   | `analise` | manda o texto pseudonimizado ao OpenRouter | **não** |
+
+   O `analise` é a única exceção a "nenhuma chamada externa em caminho de
+   documento", decidida em 2026-09-05 e registrada em `goal-fase-3.md` §2.9.
+   Ele monta só `./src`, tem `tmpfs` sobre `/app/out`, e guarda a chave da API
+   que o `ui` não recebe. `make llm-proof` verifica isso — e já reprovou uma
+   vez, pegando `out/` assado na imagem por falta de `.dockerignore`.
+
+   **Não criar um terceiro.** Se algo novo precisar de rede, ele entra por um
+   destes dois ou não entra.
 7. **Offset é a verdade; o servidor confere, não adivinha.**
    `Sessao._conferir_intervalo` valida o intervalo do cliente contra o texto
    reivindicado (JS conta UTF-16, Python conta code points). Não achar →
@@ -101,6 +117,7 @@ errada é a principal forma de introduzir bug aqui.
 | Política | `politica.py` | operador por entidade, validação | execução |
 | Estado + travas | `web/sessao.py` | **todas** as regras da UI | transporte |
 | Transporte | `web/app.py` | HTTP, códigos de status | regra de decisão |
+| Egress | `web/analise.py` | falar com o OpenRouter | documento, detecção, disco |
 | Interface | `web/static/*` | desenho e interação | regra que afete o PDF |
 
 Duas consequências que valem repetir:
@@ -146,8 +163,14 @@ make eval           # avaliação nas 3 configurações de NER (~5 min CPU)
 make diagnostico    # por que PERSON vaza: não detectado ou rótulo errado
 make ui             # interface em http://127.0.0.1:8000
 make ui-proof       # a porta responde E o ui não tem egress
+make ui-llm         # sobe a UI + o serviço de análise por LLM externa
+make llm-proof      # o ui segue sem egress; o analise não vê documento
 make offline-proof  # o pipeline roda sem rede
 ```
+
+A chave do OpenRouter sai de `anonimizador-poc/.env` (`cp .env.example .env`).
+O `.env` é ignorado pelo git **e** pelo Docker — assá-lo na imagem colocaria a
+credencial num artefato compartilhado por todos os serviços.
 
 No Windows sem `make`: `./run.ps1 <alvo>`, que faz exatamente o mesmo.
 

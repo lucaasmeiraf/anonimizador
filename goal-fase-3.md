@@ -249,6 +249,76 @@ acesso a dados que as outras têm, antes de existir em código.
 
 ---
 
+## 2.9 Implementado em 2026-09-05 — o que existe e o que ainda não
+
+A opção (b) foi construída. O desenho segue o precedente do `ui-proxy`: **o
+componente com egress é o pequeno**, e o que processa documento continua sem
+rota para fora.
+
+```
+   navegador          ui-proxy          ui                  analise         OpenRouter
+   (host)      →      copia bytes  →    interna, SEM rede   interna+externa  →  internet
+                                        deteccao, redacao,  so ./src montado
+                                        verificacao,        + tmpfs em /app/out
+                                        gate de pre-envio   guarda a chave
+```
+
+**O que ficou pronto**
+
+- `web/analise.py` — o serviço de egress. Biblioteca padrão apenas
+  (`http.server`, `urllib`): sem torch, sem transformers, sem PyMuPDF. Não vê
+  o original, não detecta, não guarda estado, não registra conteúdo.
+- **Gate de pré-envio** (`Sessao.conferir_antes_do_envio`): a detecção roda
+  **de novo** sobre o texto já pseudonimizado, com limiar 0.20 em vez de 0.35.
+  O limiar é mais baixo porque a conta se inverte antes de um envio externo —
+  falso positivo custa recusar um envio seguro; falso negativo custa um nome
+  real num terceiro, sem desfazer. Achou algo que a política mandava
+  substituir → **nada sai**, e a resposta traz entidade e posição, nunca o
+  valor.
+- **Consentimento por documento**, estruturalmente: é uma chamada explícita
+  por documento. Não existe configuração global que ligue isso e seja
+  esquecida.
+- **Trilha de auditoria** (`Sessao.registrar_envio`): quando, para onde, qual
+  modelo, quantos caracteres e tokens. Metadado apenas — nunca o que foi
+  enviado nem o que voltou. Não é apagada por `_invalidar`: o envio aconteceu,
+  e editar o documento depois não o desfaz.
+- **A chave vive só no serviço `analise`.** O `ui` não a recebe.
+- `make llm-proof` — três metades: o `ui` continua sem egress, o `analise` não
+  alcança documento em claro, e o `analise` tem a saída que precisa.
+
+**Um buraco que a prova encontrou, e que era anterior a esta fase**
+
+Na primeira execução o `llm-proof` reprovou. O `docker-compose.yml` monta só
+`./src` no serviço `analise`, mas o `Dockerfile` faz `COPY . /app` e **não
+havia `.dockerignore`** — então `out/`, onde o original em claro vive durante a
+revisão, era assado na imagem no momento do build.
+
+Estava vazio, e não houve vazamento. Mas um build feito com uma sessão em
+revisão teria copiado o PDF original para dentro de uma imagem, com retenção
+própria, sem TTL e sem verificação — violação direta da invariante 9. E a mesma
+falha assaria o `.env` com a chave da API.
+
+Corrigido em duas camadas: `.dockerignore` e `tmpfs` sobre `/app/out` no
+serviço com egress. `web/prova_isolamento.py` impede que as duas apodreçam em
+silêncio.
+
+**O que continua pendente, e bloqueia uso com documento real**
+
+- [ ] **Retenção no OpenRouter.** É configuração da conta do cliente
+      (`openrouter.ai/settings/privacy`), não deste repositório. Provedores
+      têm políticas diferentes e alguns treinam com o que recebem. Precisa ser
+      fixada e verificada, não presumida.
+- [ ] **Tela.** Hoje o acesso é por API. O aviso do que o sistema sabe e do
+      que não sabe precisa aparecer no momento da escolha.
+- [ ] **Os dois furos de detecção continuam.** `PERSON` escapa em ~1 documento
+      a cada 50; identificador indireto por contexto não é detectado de forma
+      alguma, e nenhum token o resolve. O gate de pré-envio **não** os cobre:
+      ele acha o que o detector acha, e o problema é justamente o que ele não
+      acha. Com envio externo isso deixa de ser defeito local e vira incidente
+      com terceiro.
+
+---
+
 ## 3. Como as duas se relacionam
 
 Não são a mesma decisão, e têm gravidades diferentes:

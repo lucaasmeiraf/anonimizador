@@ -128,10 +128,10 @@ precisa passar pelos geradores com checksum, não inventar identificadores.
 
 ### 2.6 Análise do documento pseudonimizado
 
-> Acrescentado em 2026-09-05, quando o operador de token (`pseudonimo.py`)
-> e a saída de texto passaram a existir. **Ainda não há envio implementado** —
-> esta seção autoriza o uso e fixa suas condições antes de o código existir,
-> que é a ordem que este documento exige.
+> Acrescentado em 2026-09-05, quando o operador de token (`pseudonimo.py`) e a
+> saída de texto passaram a existir; **implementado no mesmo dia**, via
+> `web/analise.py` e a rota `POST /api/doc/{id}/analisar`. A autorização veio
+> antes do código, que é a ordem que este documento exige.
 
 **Atividade.** O usuário faz perguntas sobre o próprio documento — resumir,
 localizar, classificar, explicar o andamento — e a LLM responde com base no
@@ -163,21 +163,42 @@ pode conter valor original, e não tem como conter: o modelo nunca viu um.
 alterado, e R3 continua valendo integralmente: nenhuma saída de LLM altera
 PDF, texto ou span sem aprovação humana explícita.
 
-**O que esta autorização não cobre, e precisa de decisão separada:**
+**R1 tem uma exceção explícita, e ela é esta.**
 
-1. **Para onde o texto vai.** R1 exige LLM local sob `network_mode: none`. A
-   decisão de 2026-09-05 é usar **LLM externa** (ver `goal-fase-3.md` §2), o
-   que é uma exceção explícita a R1 e traz junto: serviço de egress isolado
-   sem acesso ao original, consentimento por documento, retenção acertada com
-   o provedor, e registro do que foi enviado. Nada disso está implementado.
+R1 exige LLM local sob `network_mode: none`. A decisão de 2026-09-05 é usar
+**LLM externa** (OpenRouter), porque o produto não mira cliente com infra de
+GPU. É a única exceção a R1 no sistema, e ela é contida por desenho:
 
-2. **O que o gate não prova.** `verify_texto` prova que os valores *que
-   decidimos substituir* não sobreviveram. Não prova que tudo que era dado
-   pessoal foi detectado. Os dois furos medidos continuam: `PERSON` escapa em
-   cerca de 1 documento a cada 50, e identificador indireto por contexto
-   (§3.2) não é detectado de forma alguma — e nenhum token o resolve, porque
-   não há o que substituir. Com envio externo, esses furos deixam de ser
-   defeito local e viram incidente com terceiro.
+| | onde roda | tem egress? | vê o original? | guarda a chave? |
+|---|---|---|---|---|
+| detecção, redação, verificação | `ui` | **não** — rede `internal` | sim | não |
+| envio ao modelo | `analise` | sim | **não** — `tmpfs` sobre `/app/out` | sim |
+
+O componente com egress é o pequeno: biblioteca padrão apenas, sem torch, sem
+transformers, sem PyMuPDF. É o mesmo raciocínio do `ui-proxy`, e `make
+llm-proof` verifica as duas metades em vez de confiar nelas.
+
+**Três travas antes de qualquer byte sair**, nesta ordem: o texto existe e
+passou por `verify_texto`; a re-detecção sobre o texto de saída, com limiar
+mais baixo (0.20 contra 0.35), não acha nada que a política mandava
+substituir; e o envio é uma chamada explícita por documento — não há
+configuração global que ligue isso e depois seja esquecida. Cada envio entra
+numa trilha de auditoria com metadado, sem conteúdo.
+
+**O que nenhuma dessas travas prova, e é o limite honesto desta seção.**
+`verify_texto` prova que os valores *que decidimos substituir* não
+sobreviveram. A re-detecção acha o que o detector acha — e o problema é
+justamente o que ele **não** acha. Os dois furos medidos continuam: `PERSON`
+escapa em cerca de 1 documento a cada 50, e identificador indireto por
+contexto (§3.2) não é detectado de forma alguma, sem token que o resolva
+porque não há o que substituir.
+
+Com envio externo, esses furos deixam de ser defeito local — corrigível na
+próxima revisão, na máquina do cliente — e viram **incidente com terceiro**: o
+dado saiu, pode ter sido registrado ou usado em treino, e apagar depois não
+desfaz o envio. A retenção no provedor é configuração da conta do cliente
+(`openrouter.ai/settings/privacy`) e precisa ser fixada e verificada, não
+presumida.
 
 ---
 
