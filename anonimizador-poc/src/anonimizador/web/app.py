@@ -316,6 +316,41 @@ def baixar(sessao: Sessao = Depends(pegar_sessao)):
     )
 
 
+@app.post("/api/doc/{doc_id}/pseudonimizar")
+def pseudonimizar(sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    """Gera o texto com token no lugar de cada valor.
+
+    Artefato separado do PDF, com gate próprio. A decisão do que é substituído
+    é a mesma da tarja — mora em `sessao.py`, não aqui: esta rota é transporte.
+    """
+    if not sessao.spans_ativos():
+        raise HTTPException(400, "nenhum span ativo: não há o que pseudonimizar")
+    sessao.gerar_texto_pseudonimizado()
+    return sessao.to_dict()
+
+
+@app.get("/api/doc/{doc_id}/download/texto")
+def baixar_texto(sessao: Sessao = Depends(pegar_sessao)):
+    """O mesmo gate do PDF, para o artefato de texto.
+
+    `pode_baixar_texto` exige `verify_texto().ok`, que confere as duas metades:
+    nenhum valor original sobreviveu **e** nenhum token se perdeu. Qualquer
+    edição posterior invalida e apaga o arquivo (`Sessao._invalidar`).
+    """
+    if not sessao.pode_baixar_texto:
+        raise HTTPException(
+            409,
+            "texto não gerado ou reprovado na verificação; "
+            "não há arquivo liberado",
+        )
+    nome = Path(sessao.nome_arquivo).stem
+    return FileResponse(
+        str(sessao.texto_pseudo),
+        media_type="text/plain; charset=utf-8",
+        filename=f"{nome}.pseudonimizado.txt",
+    )
+
+
 # --------------------------------------------------------------------------
 # Estáticos
 # --------------------------------------------------------------------------

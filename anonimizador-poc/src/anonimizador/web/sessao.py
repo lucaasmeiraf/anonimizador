@@ -39,8 +39,9 @@ from .. import config
 from ..layout import TextMap, build_text_map
 from ..pdf_redactor import redact_document
 from ..politica import MANTER, TARJA, PerfilPolitica, validar_perfil
-from ..spans import Span
-from ..verifier import verify
+from ..pseudonimo import pseudonimizar_texto, tokens_de
+from ..spans import Span, resolver_sobreposicoes
+from ..verifier import verify, verify_texto
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,10 @@ class Sessao:
     aprovada: bool = False
     redigido: Path | None = None
     relatorio: dict | None = None
+    # Artefato de texto pseudonimizado. Independente do PDF: tem gate próprio
+    # (`verify_texto`), e a mesma edição invalida os dois.
+    texto_pseudo: Path | None = None
+    relatorio_texto: dict | None = None
 
     # -- política ---------------------------------------------------------
     def operador_de(self, entidade: str) -> str:
@@ -395,13 +400,21 @@ class Sessao:
         que não corresponde ao que ele viu aprovado. É o modo de falha mais
         fácil de introduzir numa tela assim.
         """
-        if self.aprovada or self.redigido:
+        if self.aprovada or self.redigido or self.texto_pseudo:
             logger.info("sessao %s: aprovacao invalidada por edicao", self.doc_id)
         self.aprovada = False
         self.relatorio = None
         if self.redigido and self.redigido.exists():
             self.redigido.unlink()
         self.redigido = None
+
+        # O texto pseudonimizado é um entregável como o PDF, e a mesma regra
+        # vale: quem editou depois de gerar não pode baixar o que foi gerado
+        # antes da edição.
+        self.relatorio_texto = None
+        if self.texto_pseudo and self.texto_pseudo.exists():
+            self.texto_pseudo.unlink()
+        self.texto_pseudo = None
 
     # -- produção do arquivo ----------------------------------------------
     def aprovar(self) -> dict:
@@ -470,6 +483,86 @@ class Sessao:
             res.spans_redigidos,
         )
         return self.relatorio
+
+    def gerar_texto_pseudonimizado(self) -> dict:
+        """Produz o texto com tokens no lugar dos valores, e verifica.
+
+        Espelha ``aprovar()`` de propósito, inclusive no que parece detalhe:
+        se a verificação reprovar, o arquivo é apagado. Um artefato que falhou
+        o gate não pode ficar em disco esperando alguém alcançá-lo por outro
+        caminho — vale para o texto exatamente como vale para o PDF.
+
+        Usa os mesmos spans que virariam tarja. A política não muda; muda o
+        que preenche o buraco em cada artefato — retângulo preto no PDF, token
+        no texto. É por isso que isto não é um operador novo de ``politica.py``
+        e ``validar_perfil`` continua recusando ``pseudonimo``: enquanto não
+        existir escritor de token no PDF, liberar o operador deixaria um perfil
+        pedir pseudônimo e receber tarja, sem aviso.
+        """
+        ativos = [s.para_span() for s in self.spans_ativos()]
+
+        # Spans ativos podem se sobrepor: basta desligar um span detectado,
+        # marcar um trecho manual dentro dele e religar o detectado. O caminho
+        # do PDF tolera isso desenhando dois retângulos; a substituição em
+        # texto produziria um token dentro do outro. `resolver_sobreposicoes`
+        # é a peça determinística que já existe para essa decisão — sem
+        # `texto`, para não redecidir rótulo que o usuário pode ter editado.
+        disjuntos = resolver_sobreposicoes(ativos)
+
+        res = pseudonimizar_texto(self.tm.text, disjuntos)
+        tokens = tokens_de(res.substituicoes)
+
+        saida = self.pasta / "pseudonimizado.txt"
+        rel = verify_texto(res.texto, res.valores, tokens, caminho=str(saida))
+
+        self.relatorio_texto = {
+            "spans_substituidos": len(res.substituicoes),
+            "tokens_distintos": len(tokens),
+            "spans_descartados_por_sobreposicao": len(ativos) - len(disjuntos),
+            "caracteres": len(res.texto),
+            "verificacao_ok": rel.ok,
+            "vetores": rel.vetores_executados,
+            "valores_checados": rel.valores_checados,
+            "vazamentos": sorted({leak.vetor for leak in rel.leaks}),
+            "total_vazamentos": len(rel.leaks),
+            # Token não é dado pessoal: pode ser nomeado, e é a única coisa
+            # que torna um descarte silencioso diagnosticável.
+            "tokens_ausentes": sorted(
+                leak.valor for leak in rel.leaks if leak.vetor == "token-ausente"
+            ),
+        }
+
+        if rel.ok:
+            saida.write_text(res.texto, encoding="utf-8")
+            self.texto_pseudo = saida
+        else:
+            self.texto_pseudo = None
+            saida.unlink(missing_ok=True)
+            # Sem valor de PII: vetor e contagem bastam para diagnosticar.
+            logger.error(
+                "sessao %s: texto pseudonimizado REPROVOU, %d ocorrencia(s) em %s",
+                self.doc_id,
+                len(rel.leaks),
+                ", ".join(sorted({leak.vetor for leak in rel.leaks})) or "-",
+            )
+
+        logger.info(
+            "sessao %s: texto pseudonimizado %s, %d substituicoes, %d tokens",
+            self.doc_id,
+            "ok" if rel.ok else "REPROVADO",
+            len(res.substituicoes),
+            len(tokens),
+        )
+        return self.relatorio_texto
+
+    @property
+    def pode_baixar_texto(self) -> bool:
+        return bool(
+            self.texto_pseudo
+            and self.texto_pseudo.exists()
+            and self.relatorio_texto
+            and self.relatorio_texto.get("verificacao_ok")
+        )
 
     def _dissecar(self, leaks: list, caminho_redigido: Path) -> list[dict]:
         """Traduz cada vazamento em algo sobre o que dá para agir.
@@ -553,6 +646,8 @@ class Sessao:
             "aprovada": self.aprovada,
             "pode_baixar": self.pode_baixar,
             "relatorio": self.relatorio,
+            "pode_baixar_texto": self.pode_baixar_texto,
+            "relatorio_texto": self.relatorio_texto,
         }
 
     def span_dict(self, s: SpanUI) -> dict:

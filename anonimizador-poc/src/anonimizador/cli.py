@@ -2,6 +2,7 @@
 
     python -m anonimizador.cli analyze  --in doc.pdf
     python -m anonimizador.cli redact   --in doc.pdf --out doc.redigido.pdf
+    python -m anonimizador.cli pseudonimizar --in doc.pdf --out doc.pseudo.txt
     python -m anonimizador.cli corpus   --out eval/datasets --n 50
     python -m anonimizador.cli eval     --datasets eval/datasets
     python -m anonimizador.cli offline-proof
@@ -108,6 +109,60 @@ def cmd_redact(args: argparse.Namespace) -> int:
         print(f"    - {leak}")
     print()
     return 1
+
+
+# --------------------------------------------------------------------------
+# pseudonimizar
+# --------------------------------------------------------------------------
+def cmd_pseudonimizar(args: argparse.Namespace) -> int:
+    """Extrai o texto do PDF e devolve os valores trocados por token.
+
+    Saída de texto, não PDF: o token dentro do PDF é a segunda metade da Fase
+    A (A3-A8) e ainda não existe. O arquivo de entrada não é modificado.
+    """
+    import fitz
+
+    from .layout import build_text_map
+    from .pipeline import DetectionPipeline
+    from .pseudonimo import pseudonimizar_texto, tokens_de
+    from .spans import resolver_sobreposicoes, spans_para_redigir
+    from .verifier import verify_texto
+
+    pipeline = DetectionPipeline(ner_config=args.ner)
+    doc = fitz.open(args.entrada)
+    try:
+        tm = build_text_map(doc)
+        spans = pipeline.analyze(tm.text)
+    finally:
+        doc.close()
+
+    alvo = resolver_sobreposicoes(spans_para_redigir(spans))
+    res = pseudonimizar_texto(tm.text, alvo)
+    tokens = tokens_de(res.substituicoes)
+
+    relatorio = verify_texto(res.texto, res.valores, tokens, caminho=str(args.saida))
+
+    print(f"\n  detectadas    : {len(spans)} entidades")
+    print(f"  substituídas  : {len(res.substituicoes)} ({len(tokens)} tokens distintos)")
+    print(f"  verificação   : {', '.join(relatorio.vetores_executados)}, "
+          f"{relatorio.valores_checados} valores")
+
+    if not relatorio.ok:
+        # Nenhum valor no stdout: vetor e contagem bastam, e quem investiga
+        # tem o documento de origem. Token não é PII e pode ser nomeado.
+        print(f"  RESULTADO     : {len(relatorio.leaks)} FALHA(S)\n")
+        for leak in relatorio.leaks[:30]:
+            if leak.vetor == "token-ausente":
+                print(f"    - [token-ausente] {leak.valor}")
+            else:
+                print(f"    - [{leak.vetor}] valor sobreviveu no texto")
+        print("\n  nada foi escrito: o artefato reprovado não é entregue.\n")
+        return 1
+
+    Path(args.saida).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.saida).write_text(res.texto, encoding="utf-8")
+    print(f"  RESULTADO     : ok, escrito em {args.saida}\n")
+    return 0
 
 
 # --------------------------------------------------------------------------
@@ -230,6 +285,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", dest="saida", required=True)
     add_ner(p)
     p.set_defaults(func=cmd_redact)
+
+    p = sub.add_parser(
+        "pseudonimizar",
+        help="extrai o texto e troca cada valor por um token estável",
+    )
+    p.add_argument("--in", dest="entrada", required=True)
+    p.add_argument("--out", dest="saida", required=True)
+    add_ner(p)
+    p.set_defaults(func=cmd_pseudonimizar)
 
     p = sub.add_parser("corpus", help="gera o corpus sintético")
     p.add_argument("--out", dest="saida", default="eval/datasets")
