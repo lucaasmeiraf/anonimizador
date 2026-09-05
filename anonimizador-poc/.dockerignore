@@ -1,0 +1,38 @@
+# O Dockerfile faz `COPY . /app`. Sem este arquivo, tudo que estiver na pasta
+# no momento do build entra na imagem — e a imagem e compartilhada por todos os
+# servicos, inclusive os que tem saida de rede.
+#
+# Descoberto em 2026-09-05 pelo alvo `llm-proof`: o servico `analise`, que
+# deliberadamente NAO monta ./out, enxergava /app/out/sessoes assado na imagem.
+# Estava vazio, entao nao houve vazamento — mas um build feito com uma sessao
+# em revisao teria copiado o PDF original em claro para dentro da imagem, com
+# retencao propria, sem TTL e sem verificacao. Isso viola a invariante 9.
+
+# --------------------------------------------------------------------------
+# Documentos e saidas — nunca entram na imagem
+# --------------------------------------------------------------------------
+out/
+data/
+eval/datasets/
+eval/report.md
+eval/diagnostico-person.md
+eval/gate-usabilidade/documentos/
+eval/gate-usabilidade/gabarito-NAO-ABRIR-ANTES.json
+*.pdf
+*.anonimizado.pdf
+
+# --------------------------------------------------------------------------
+# Credenciais — a chave do OpenRouter nao pode ser assada na imagem
+# --------------------------------------------------------------------------
+.env
+
+# --------------------------------------------------------------------------
+# Ruido de build
+# --------------------------------------------------------------------------
+.git/
+.gitignore
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.egg-info/
