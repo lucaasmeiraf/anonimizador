@@ -126,6 +126,59 @@ precisa passar pelos geradores com checksum, não inventar identificadores.
 
 **Acesso a dados.** O relatório de métricas, que é agregado. **Nenhum valor.**
 
+### 2.6 Análise do documento pseudonimizado
+
+> Acrescentado em 2026-09-05, quando o operador de token (`pseudonimo.py`)
+> e a saída de texto passaram a existir. **Ainda não há envio implementado** —
+> esta seção autoriza o uso e fixa suas condições antes de o código existir,
+> que é a ordem que este documento exige.
+
+**Atividade.** O usuário faz perguntas sobre o próprio documento — resumir,
+localizar, classificar, explicar o andamento — e a LLM responde com base no
+texto pseudonimizado.
+
+**Acesso a dados.** O documento **inteiro**, em texto, com cada valor
+detectado já substituído por token (`[P-7F3A]`, `[CPF-2C81]`). É o único ponto
+desta lista que vê o corpo do documento, e por isso ele precisa de análise
+própria em vez de herdar a dos outros cinco.
+
+**Por que isso não viola R2.** R2 diz que a LLM nunca recebe valor de PII. A
+substituição por token garante isso **por construção**, e não por promessa: o
+artefato só existe depois de `verify_texto` confirmar as duas metades —
+nenhum valor original sobreviveu, e nenhum token se perdeu. Um texto que
+falhe qualquer uma das duas não é gerado, não fica em disco e não pode ser
+baixado.
+
+Vale registrar que este ponto é **mais forte** que o texto original de R2 em
+um aspecto e mais fraco em outro. Mais forte: aqui há verificação automática
+do que a LLM recebe, o que nenhum dos outros cinco pontos tem. Mais fraco: os
+outros cinco veem metadados agregados, e este vê a estrutura narrativa
+completa do documento.
+
+**Saída.** Texto livre, em resposta ao usuário. Ela pode conter tokens — e
+deve, porque é assim que a resposta fica rastreável ao documento. Ela **não**
+pode conter valor original, e não tem como conter: o modelo nunca viu um.
+
+**Se errar.** Uma análise errada é uma análise errada — o documento não é
+alterado, e R3 continua valendo integralmente: nenhuma saída de LLM altera
+PDF, texto ou span sem aprovação humana explícita.
+
+**O que esta autorização não cobre, e precisa de decisão separada:**
+
+1. **Para onde o texto vai.** R1 exige LLM local sob `network_mode: none`. A
+   decisão de 2026-09-05 é usar **LLM externa** (ver `goal-fase-3.md` §2), o
+   que é uma exceção explícita a R1 e traz junto: serviço de egress isolado
+   sem acesso ao original, consentimento por documento, retenção acertada com
+   o provedor, e registro do que foi enviado. Nada disso está implementado.
+
+2. **O que o gate não prova.** `verify_texto` prova que os valores *que
+   decidimos substituir* não sobreviveram. Não prova que tudo que era dado
+   pessoal foi detectado. Os dois furos medidos continuam: `PERSON` escapa em
+   cerca de 1 documento a cada 50, e identificador indireto por contexto
+   (§3.2) não é detectado de forma alguma — e nenhum token o resolve, porque
+   não há o que substituir. Com envio externo, esses furos deixam de ser
+   defeito local e viram incidente com terceiro.
+
 ---
 
 ## 3. Onde a LLM **não** entra
@@ -187,6 +240,7 @@ perfil "óbvio" em processamento de lote.
 | 2.3 Relatório de conformidade | não | não | contagens e política | não |
 | 2.4 Corpus sintético | não | não | não | não |
 | 2.5 Explicador de métricas | não | não | métricas agregadas | não |
+| 2.6 Análise do documento pseudonimizado | **sim**, em texto, com token no lugar de cada valor | não — garantido por `verify_texto`, não por promessa | o corpo do documento | não (R3) |
 | 3.1 Pseudonimização | — | **proibido** | — | — |
 | 3.2 Detecção | **proibido** | **proibido** | — | — |
 

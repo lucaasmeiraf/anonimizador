@@ -103,13 +103,46 @@ auditoria restrito, nunca para log de aplicação. Está em
 | RN-05 | Resolver a licença do checkpoint de NER LeNER-Br, ou substituí-lo | **Pendente — bloqueia entrega** |
 | RN-06 | Atribuição do `pt_core_news_lg` (CC BY-SA 4.0) na documentação do produto | Pendente |
 | RN-07 | Conferir as citações normativas do documento de ideia antes de usá-las em material comercial | **Não verificado** |
+| RN-08 | Todo artefato entregável passa por verificação própria antes de ser servido — não só o PDF | Atendido (Fase 2A) |
 
 ### RN-01 e RN-02, em uma frase
 
 Pela LGPD, dado **anonimizado** (art. 5º, III; art. 12) sai do escopo da lei;
-dado **pseudonimizado** (art. 13, §4º) continua sendo dado pessoal. O modelo
-reversível com chave que o projeto pretende oferecer na Fase 2 é
-pseudonimização. Prometer o contrário é erro jurídico com risco reputacional.
+dado **pseudonimizado** (art. 13, §4º) continua sendo dado pessoal.
+Prometer o contrário é erro jurídico com risco reputacional.
+
+> **Atualização de 2026-09-05 — a palavra "pseudonimização" passou a ter dois
+> sentidos neste projeto, e confundi-los é o erro que RN-01 existe para
+> impedir.**
+>
+> O que a Fase 2A entregou é **token sem cofre**: o token é sorteado, não
+> derivado do valor, e o mapa morre com o processamento. Não existe chave, não
+> existe "informação adicional mantida separadamente", e o processo não é
+> reversível — nem por nós. Pela definição da lei, essa saída é **dado
+> anonimizado**, e sai do escopo, apesar de o nome do módulo ser
+> `pseudonimo.py`.
+>
+> O que tornaria a saída dado pessoal é o **cofre** (Fase B, encerrada em
+> 2026-09-05). Enquanto ele não existir, a ressalva de RN-02 não se aplica ao
+> artefato de texto.
+>
+> Duas coisas continuam valendo, e são as que a tela precisa dizer:
+> a saída sair do escopo depende de a reidentificação não ser viável por
+> esforços razoáveis — não é garantia absoluta, e a orientação da ANPD é
+> baseada em risco; e a detecção tem furos medidos (§ `docs/05-politica-llm.md`
+> 2.6), então "não sobrou o que detectamos" nunca é "não sobrou nada".
+
+### RN-08 — o gate vale por artefato, não por formato
+
+A invariante do projeto é que nada é entregue sem verificação aprovada. Até a
+Fase 1 havia um só entregável, o PDF, e o gate era `verify()`. A Fase 2A
+acrescentou o texto pseudonimizado, e com ele `verify_texto()`, que confere
+duas coisas: nenhum valor original sobreviveu, **e** nenhum token se perdeu.
+
+A segunda metade não é simetria estética. Se o valor sai e o token não entra,
+uma checagem que só procurasse o original diria "limpo" — porque o original de
+fato sumiu — e o gate aprovaria um documento mutilado. Qualquer entregável
+novo herda a mesma exigência: verificação própria, e nada servido sem ela.
 
 ### RN-04 e RN-05 bloqueiam entrega, não desenvolvimento
 

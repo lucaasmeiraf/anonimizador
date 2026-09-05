@@ -169,6 +169,24 @@ por documento, com o aviso dizendo o que o sistema sabe e o que não sabe. O
 usuário decide com a informação correta em vez de com a palavra
 "anonimizado".
 
+> **Decisão de 2026-09-05: (b), não (c).** A LLM será externa desde o início.
+> Razão dada: o produto não mira cliente com capacidade de investir em infra
+> de GPU, e exigir Ollama local excluiria o público-alvo.
+>
+> A decisão é defensável e é do usuário. O que ela **não** faz é tornar
+> desnecessária a lista de exigências de (b) — ela as torna obrigatórias, e
+> todas continuam pendentes: serviço com egress isolado nos moldes do
+> `ui-proxy` e sem acesso ao original; re-detecção sobre o texto antes do
+> envio, com limiar mais estrito; consentimento por documento e não por
+> configuração; retenção fixada e verificada junto ao provedor; registro do
+> que foi enviado, para quem e quando.
+>
+> E a frase que o produto pode dizer ao cliente muda de natureza: sai de "o
+> documento não sai da sua máquina" — verificável por ausência de interface
+> de rede — para "o documento sai, mas pseudonimizado" — que é uma promessa
+> sobre a *qualidade da detecção*, e a detecção tem os dois furos medidos
+> acima. Isso precisa estar no material comercial antes de existir na tela.
+
 ### O que não pode acontecer
 
 A tela **não pode** dizer "documento anonimizado, seguro para enviar". O que
@@ -179,6 +197,55 @@ ela pode dizer honestamente é:
 > nomes escapam em cerca de 1 a cada 50 documentos, e identificadores
 > indiretos por contexto não são detectados de forma alguma. Enviar a um
 > serviço externo é irreversível.
+
+### Acréscimo de 2026-09-05 — a inversão do fluxo, e o pseudônimo no meio
+
+Duas coisas que esta seção não previa, levantadas depois da medição do A1.
+
+**1. O que a LLM recebe deve ser pseudonimizado, não tarjado.** Esta seção
+inteira fala em "texto anonimizado", subentendendo tarja. Mas tarja não
+apaga só o nome: apaga o *ator*. A LLM recebe `O servidor ⏎ compareceu`, sem
+saber que havia alguém ali, sem saber se é a mesma pessoa do parágrafo
+seguinte — que é convite a alucinação exatamente onde a análise precisa ser
+confiável.
+
+Com token (`[P-7F3A]`), o modelo sabe que existe um ator, sabe o tipo, e sabe
+que é o mesmo nos dois parágrafos. **A Fase A da Fase 2 é pré-requisito desta
+seção**, não um trabalho paralelo — e o item A9 (saída de texto
+pseudonimizado, ordem correta por construção) existe por causa deste caso de
+uso, não do PDF.
+
+**2. A inversão do fluxo.** Hoje a revisão é o caminho obrigatório e o
+resultado é o PDF. A proposta é trocar a ordem:
+
+| | Hoje | Proposta |
+|---|---|---|
+| Tela principal | revisão lado a lado | chatbox: envia documento, pergunta |
+| Revisão de tarjas | obrigatória, sempre | um clique de distância, opcional |
+| Tela de revisão vira | o produto | a **auditoria** — como provar o que foi feito |
+| Entregável | PDF tarjado | resposta da LLM; PDF quando o caso for publicar |
+
+O ganho é real: atrito é o que faz ferramenta de conformidade ser contornada,
+e o fluxo atual cobra revisão completa mesmo de quem só quer perguntar algo
+ao documento.
+
+**A trava a preservar, e ela é barata.** A invariante exige *autorização
+humana* antes de liberar, não revisão de cada tarja. Um resumo do inventário
+com um botão — "12 pessoas, 3 CPFs, 2 e-mails encontrados; enviar?" — mais um
+link discreto para a tela de revisão satisfaz a invariante e continua sendo um
+clique. O que não pode existir é o caminho de zero clique **com LLM externa**,
+porque ali o envio é irreversível e o 1-em-50 vira incidente com terceiro.
+
+Com LLM local a conta muda: nada sai da máquina, o envio não é publicação, e
+o automático passa a ser defensável. É mais um argumento para a recomendação
+(c) desta seção — local por padrão.
+
+**3. Consequência para `docs/05-politica-llm.md`.** O documento é normativo e
+diz que uso não listado não está autorizado. Ele lista cinco pontos, e nenhum
+é "a LLM analisa o documento pseudonimizado inteiro". Não é violação de R2 —
+o A2 garante por construção que não há valor de PII no que a LLM recebe —
+mas é ponto **novo**, e precisa virar uma seção 2.6 com a mesma análise de
+acesso a dados que as outras têm, antes de existir em código.
 
 ---
 

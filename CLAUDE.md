@@ -35,9 +35,12 @@ já produziu, ou produziria, um dos três modos de falha acima.
 1. **Redação é remoção, não cobertura.** `apply_redactions` + `clean_contents`
    + `_sanear` + `save(garbage=4, incremental=False)`. Nunca desenhar
    retângulo por cima e chamar isso de tarja.
-2. **Nada é baixado sem `verify().ok`.** O gate vive em `Sessao.pode_baixar` e
-   em `GET /download`. Não criar nenhuma rota, atalho de debug ou export que
-   sirva arquivo sem passar por ele.
+2. **Nada é baixado sem verificação aprovada, e isso vale por artefato.** O
+   PDF passa por `verify()` (`Sessao.pode_baixar`, `GET /download`); o texto
+   pseudonimizado passa por `verify_texto()` (`Sessao.pode_baixar_texto`,
+   `GET /download/texto`). Entregável novo exige gate novo — não herda o de
+   outro formato. Não criar nenhuma rota, atalho de debug ou export que sirva
+   arquivo sem passar pelo seu.
 3. **Qualquer edição invalida a aprovação** (`Sessao._invalidar`) e apaga o PDF
    já gerado. Sem isso o usuário baixa algo diferente do que aprovou.
 4. **Nenhum valor de PII em log.** Registrar id de span, contagem, entidade,
@@ -46,6 +49,16 @@ já produziu, ou produziria, um dos três modos de falha acima.
 5. **Operador declarado ≠ operador implementado.** `validar_perfil` recusa
    `pseudonimo` e `mascara` (`OPERADORES_IMPLEMENTADOS`). Não relaxar essa
    trava sem o executor correspondente existir e ser testado.
+
+   Continua valendo **apesar de** `pseudonimo.py` existir: o token é escrito
+   no artefato de *texto*, não dentro do PDF. Liberar o operador agora deixaria
+   um perfil pedir pseudônimo e receber um PDF tarjado, sem aviso — que é
+   exatamente o buraco que esta invariante existe para tapar. A trava sai
+   quando A3–A8 (`goal-fase-2.md`) entregarem o escritor de token no PDF.
+
+   Corolário: **substituição por token é propriedade da saída, não operador de
+   política.** Os spans são os mesmos e a política é a mesma; muda só o que
+   preenche o buraco em cada artefato.
 6. **O perímetro de rede é a promessa central do produto.** Serviços de lote
    rodam em `network_mode: none`; o `ui` vive em rede `internal: true`; o
    `ui-proxy` é o único com egress e **não processa documento** — só copia
@@ -83,7 +96,8 @@ errada é a principal forma de introduzir bug aqui.
 | Lógica pura de span | `spans.py` | precedência, desambiguação, filtro | Presidio, torch |
 | Geometria | `layout.py` | offset ↔ retângulo | decisão sobre o que tarjar |
 | Redação | `pdf_redactor.py` | remover e sanear | decisão sobre o que tarjar |
-| Verificação | `verifier.py` | 10 vetores, independente | qualquer confiança no redator |
+| Pseudônimo | `pseudonimo.py` | token e substituição em texto | PDF, disco, política |
+| Verificação | `verifier.py` | 10 vetores no PDF, 2 no texto | qualquer confiança no redator |
 | Política | `politica.py` | operador por entidade, validação | execução |
 | Estado + travas | `web/sessao.py` | **todas** as regras da UI | transporte |
 | Transporte | `web/app.py` | HTTP, códigos de status | regra de decisão |
@@ -102,9 +116,16 @@ Duas consequências que valem repetir:
 
 - Mexeu em `spans.py`, `layout.py` ou `pdf_redactor.py` → **rode o eval**. Um
   caractere de deslocamento é um vazamento, e o teste unitário não pega.
+- Mexeu em qualquer coisa que possa alcançar o caminho do PDF → confira com
+  `eval/impressao_pdf.py`, que compara a saída por conteúdo observável (texto
+  extraído, retângulos, saneamento, verificação). **Não comparar bytes**: a
+  saída do PyMuPDF não é byte-determinística entre execuções — o `/ID` do
+  trailer varia — e um diff de bytes acusaria mudança sempre.
 - Adicionar entidade nova exige, tudo junto, sob pena de lacuna silenciosa:
-  `config.ENTIDADES_ATIVAS` + `config.PRECEDENCIA` + `recognizers/__init__.MODULOS`
-  + `perfil_padrao()` + testes + gerador de corpus.
+  `config.ENTIDADES_ATIVAS` + `config.PRECEDENCIA` + `config.SIGLAS_TOKEN` +
+  `recognizers/__init__.MODULOS` + `perfil_padrao()` + testes + gerador de
+  corpus. A sigla não é opcional: `AlocadorDeToken` levanta erro para entidade
+  sem sigla, e `test_toda_entidade_ativa_tem_sigla` fecha a lacuna.
 - Mexeu na política padrão (`ENTIDADES_REDIGIDAS`, `perfil_padrao`) → é
   mudança **jurídica**, não técnica. Ver seção 6.
 - Mexeu em `web/static/*` → o carimbo de versão em `raiz()` já invalida o
@@ -239,6 +260,7 @@ verificar licença — a lista de pendências já é grande o bastante.
 
 ```
 goal-fase-0.md .. goal-fase-3.md   escopo e decisões por fase (fase 1 em andamento)
+goal-fase-2a.md                    recorte executável da Fase 2A: token + saída de texto
 anonimizador-poc/
   src/anonimizador/                pipeline, reconhecedores, redator, verificador
     web/                           API, sessão, estáticos, prova de rede

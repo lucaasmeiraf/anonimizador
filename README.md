@@ -99,6 +99,35 @@ Se algo passou batido, você pode selecionar o trecho na tela e tarjar só
 aquela ocorrência, ou digitar um valor e tarjar todas as ocorrências dele no
 documento.
 
+### Duas saídas, para dois usos diferentes
+
+A tarja é perfeita para publicar e péssima para analisar, e a razão é a mesma:
+ela apaga o texto de verdade. Num PDF tarjado não há como saber se o servidor
+citado no parágrafo 3 é o mesmo do parágrafo 9 — as tarjas são todas iguais.
+Para publicar no Diário Oficial isso não é problema. Para pedir a alguém, ou a
+uma ferramenta, que analise o documento, é: perde-se o fio da narrativa.
+
+Por isso a ferramenta produz dois arquivos a partir da mesma revisão:
+
+| | **PDF tarjado** | **Texto com código** |
+|---|---|---|
+| O que aparece no lugar do nome | nada — o texto foi removido | `[P-7F3A]` |
+| Serve para | publicar, responder LAI, arquivar | analisar, resumir, submeter a uma IA |
+| Dá para seguir o mesmo ator no documento? | não | sim |
+| É reversível? | **não** | **não** |
+
+O código é sorteado, não calculado a partir do nome, e o mapa que os liga é
+descartado assim que o arquivo fica pronto. **Não existe chave, não guardamos
+nada, e nem nós conseguimos voltar ao original** — o mesmo código representa
+outra pessoa em outro documento. É o que mantém as duas saídas no mesmo
+patamar de proteção; a diferença entre elas é de legibilidade, não de
+segurança.
+
+Os dois arquivos passam por conferência antes de serem liberados. A do texto
+confere duas coisas: que nenhum valor original sobreviveu, e que nenhum código
+se perdeu no caminho — porque um arquivo em que o nome sumiu mas o código não
+entrou pareceria correto e não seria.
+
 ### O que ele identifica sozinho
 
 | | |
@@ -146,14 +175,22 @@ legal:
   desfazer) **continua sendo dado pessoal**, com todas as obrigações que isso
   traz.
 
-O que esta ferramenta faz hoje é remoção irreversível. É o caso mais forte, e
-é por isso que a irreversibilidade — que parece uma limitação — é o que dá
-valor ao resultado.
+**As duas saídas desta ferramenta são irreversíveis** — a tarja porque apaga o
+texto, e o texto com código porque o código é sorteado e o mapa é descartado.
+Nenhuma das duas guarda chave, então as duas ficam no caso mais forte. A
+irreversibilidade parece uma limitação e é justamente o que dá valor ao
+resultado.
 
-Está previsto um segundo modo, reversível sob chave, para o caso em que
-alguém autorizado precisa voltar ao original. **Ele ainda não existe**, e
-quando existir a ferramenta vai dizer na tela, no momento da escolha, que
-ligá-lo devolve o documento para dentro do alcance da LGPD.
+Um modo reversível sob chave chegou a ser desenhado, para o caso em que
+alguém autorizado precisasse voltar ao original. **Ele foi descartado**, e a
+razão vale ser dita: quem tem o documento original já pode "voltar atrás"
+guardando-o com o controle de acesso que ele merece — e essa solução não
+custa nada em obrigação legal, enquanto guardar uma chave devolveria o
+arquivo de saída para dentro do alcance da LGPD.
+
+> Uma ressalva honesta: "sair do alcance da lei" vale enquanto a
+> reidentificação não for viável por esforços razoáveis. A orientação da ANPD
+> é baseada em risco, e não existe técnica com eficácia plena — nem esta.
 
 > A leitura jurídica do seu caso concreto é de quem responde por ela na sua
 > organização. O que a ferramenta faz é descrever com precisão o que ela fez
@@ -233,8 +270,9 @@ documentada e medida antes de a seguinte começar.
 |---|---|---|
 | **0** — Detecção e redação | "a stack local aguenta, e com que qualidade?" | ✅ concluída, com números |
 | **1** — Interface de revisão | "uma pessoa consegue confiar e assinar embaixo?" | 🔶 quase concluída — falta medir o gate de usabilidade com pessoas reais |
-| **2** — Reversibilidade sob chave | "dá para desfazer, com controle?" | 📄 desenhada, não decidida |
-| **3** — Perímetro de rede | "vale abrir a rede por conexões com a nuvem?" | 📄 desenhada, não decidida |
+| **2A** — Código no lugar do nome | "dá para o documento continuar legível sem expor ninguém?" | ✅ concluída — saída de texto, sem chave e sem cofre |
+| **2B** — Reversibilidade sob chave | "dá para desfazer, com controle?" | ⛔ encerrada — guardar o original resolve, sem custo legal |
+| **3** — Perímetro de rede | "vale abrir a rede para análise por IA?" | 📄 desenhada, não decidida |
 
 **Antes de qualquer entrega comercial**, duas pendências de licenciamento
 precisam ser resolvidas: a biblioteca de PDF (AGPL ou licença comercial) e o

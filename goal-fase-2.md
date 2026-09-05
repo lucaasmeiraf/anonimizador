@@ -273,12 +273,61 @@ escolha — não escondida numa configuração.
 
 ### FASE A — token irreversível (legibilidade sem custo jurídico)
 
-- [ ] **A1. Teste de ordem de leitura, primeiro.** Antes de qualquer operador:
+> **Ordem revisada em 2026-09-05, depois da medição do A1.** A Fase A se
+> divide em duas metades com dificuldades muito diferentes:
+>
+> **Primeiro A2 + A9 — o token e a saída de texto.** É onde está o valor do
+> caso de uso declarado (pseudonimizar para análise por LLM, ver
+> `goal-fase-3.md` §2). Substituição de string em offset conhecido: sem caixa
+> para estourar, sem fonte embutida, sem content stream. As três arestas
+> difíceis simplesmente não existem neste caminho.
+>
+> **Depois A3–A8 — escrever o token dentro do PDF.** Adiado deliberadamente.
+> É onde vivem a largura da caixa (A4), o glifo faltante (A8) e a ordem do
+> stream medida no A1. Nada disso bloqueia o entregável principal, e todas
+> são caras. O PDF continua saindo com `tarja`, como hoje, enquanto isso.
+>
+> A dependência é só uma: A9 não roda sem A2, porque é o A2 que decide qual
+> valor vira qual token. A9 apenas escreve o resultado em outro lugar.
+>
+> **A2 + A9 têm documento próprio: `goal-fase-2a.md`**, com as decisões de
+> projeto que não são óbvias — entre elas a de que o token não pode ser hash
+> do valor, sob pena de ser reversível por força bruta.
+
+- [x] **A1. Teste de ordem de leitura, primeiro.** Antes de qualquer operador:
       um teste que pseudonimiza um documento e afirma que o texto extraído traz
       os tokens **nas posições dos valores originais**, não no fim da página.
       É o item que decide se esta abordagem serve ou se é preciso outra forma
       de inserir texto — por isso vem antes, e não depois.
-- [ ] **A2. Operador `pseudonimo` sem cofre.** Mapa valor → token em memória,
+
+      **Medido em 2026-09-05** (`tests/test_ordem_leitura.py`, 12 testes).
+      **Veredito: a abordagem serve, com uma condição.**
+
+      A geometria sai perfeita. O retângulo de cada token coincide com o do
+      valor original na mesma coluna e na mesma linha — diferença de 0,13pt
+      em `y`, que é ajuste de baseline. Nenhuma informação de posição se
+      perde, e era isso que decidiria a viabilidade.
+
+      O defeito é só de **ordem do content stream**: os tokens entram
+      anexados ao fim do fluxo da página. Quem lê o resultado depende então
+      de como extrai:
+
+      ```
+      PyMuPDF     get_text()                ordem do stream   ERRADO
+      PyMuPDF     get_text(sort=True)       geometria         certo
+      pdfplumber  extract_text()            geometria         certo
+      pdfplumber  extract_text(text_flow)   ordem do stream   ERRADO
+      ```
+
+      Os dois modos geométricos acertam, os dois de stream erram — e os
+      padrões divergem entre bibliotecas: o do PyMuPDF erra, o do pdfplumber
+      acerta. **Entregar só o PDF não garante a ordem**, porque a ordem passa
+      a depender de uma escolha que é de quem consome o arquivo, não nossa.
+
+      O teste trava as duas metades: o que já é garantido, e o defeito
+      conhecido — este último com uma asserção que **falha se o defeito for
+      corrigido**, para que o conserto não entre sem atualizar o veredito.
+- [x] **A2. Operador `pseudonimo` sem cofre.** Mapa valor → token em memória,
       descartado ao fim do documento. Determinismo **intradocumento**. Sem
       chave, sem custódia, sem retenção.
 - [ ] **A3. Formato curto e tipado.** `[P-7F3A]`, `[CPF-2C81]`. O tipo precisa
@@ -299,13 +348,36 @@ escolha — não escondida numa configuração.
       antigo, e ainda não medido: um PDF com subconjunto de fonte pode não ter
       os caracteres `[`, `-` ou os dígitos do token. Verificar antes de
       escrever; sem glifo, falhar como em A4.
+- [x] **A9. Saída de texto pseudonimizado, ao lado do PDF.** Aberto pela
+      medição do A1, e provavelmente o entregável mais importante para o caso
+      de uso declarado: o documento é pseudonimizado **para ser analisado por
+      um modelo de linguagem**, e um LLM não consome PDF — consome texto.
+
+      Entregar só o PDF deixa a ordem de leitura na mão do extrator que o
+      cliente usar, e metade dos modos testados lê errado. Mas o pipeline já
+      tem a resposta certa em mãos: `TextMap.text` mais os offsets dos spans
+      dão a substituição exata, na ordem correta **por construção**, sem
+      passar pelo content stream e sem nenhuma chance de reextração errada.
+
+      Decidir se isso é um arquivo `.txt` ao lado do PDF, um campo da API, ou
+      os dois. O que não pode acontecer é o usuário mandar o PDF para uma
+      ferramenta que lê pelo stream e receber uma análise construída em cima
+      de `O servidor ⏎ compareceu`.
 
 ### FASE B — cofre (reversibilidade, e o custo que vem junto)
 
+> **Estacionada em 2026-09-05, por decisão do usuário.** O caso de uso é
+> pseudonimizar para mandar a um LLM, e o original fica com quem o enviou —
+> então "voltar atrás" já está resolvido pelo controle de acesso ao original.
+> Isso responde a primeira pergunta do Bloco B0 e encerra a Fase B por ora.
+> Nada abaixo desta linha é para implementar; fica registrado para o caso de
+> a reversibilidade virar requisito de algum cliente.
+
 **Bloco B0 — decisões, antes de qualquer código**
-- [ ] Reversibilidade é requisito real, ou **guardar o original com controle de
+- [x] Reversibilidade é requisito real, ou **guardar o original com controle de
       acesso** resolve? As duas resolvem "voltar atrás"; a segunda não tem
       custo jurídico nenhum. Responder isto pode encerrar a Fase B.
+      **Respondido: guardar o original resolve. Fase B encerrada por ora.**
 - [ ] Onde a chave vive, quem pode reverter, e por quanto tempo o cofre existe.
       Cofre eterno é risco eterno.
 - [ ] Confirmação **por escrito** do jurídico do cliente de que a saída
