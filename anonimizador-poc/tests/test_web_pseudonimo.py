@@ -28,7 +28,7 @@ class PipelineTodasOcorrencias:
     aparece duas vezes.
     """
 
-    def analyze(self, texto: str):
+    def analyze(self, texto: str, score_threshold: float | None = None):
         spans = []
         for valor, entidade in ALVOS:
             inicio = 0

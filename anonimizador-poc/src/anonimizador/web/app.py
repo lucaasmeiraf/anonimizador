@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import fitz  # PyMuPDF
+import httpx
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -39,6 +40,12 @@ ESTATICOS = Path(__file__).parent / "static"
 # Limite de upload. Um PDF de centenas de páginas é caso legítimo, mas a
 # latência de detecção cresce linear e a Fase 0 só mediu até 3 páginas.
 MAX_BYTES = int(os.getenv("ANON_MAX_UPLOAD", str(50 * 1024 * 1024)))
+
+# Serviço de análise por LLM externa. Vive noutro container, com egress; este
+# aqui não tem rota para fora. Ausente o serviço, a rota de análise responde
+# 502 — nunca tenta falar direto com a internet.
+ANALISE_URL = os.getenv("ANON_ANALISE_URL", "http://analise:8100").rstrip("/")
+ANALISE_TIMEOUT = float(os.getenv("ANON_ANALISE_TIMEOUT", "180"))
 
 sessoes = Sessoes(RAIZ_SESSOES)
 _pipeline: DetectionPipeline | None = None
@@ -327,6 +334,75 @@ def pseudonimizar(sessao: Sessao = Depends(pegar_sessao)) -> dict:
         raise HTTPException(400, "nenhum span ativo: não há o que pseudonimizar")
     sessao.gerar_texto_pseudonimizado()
     return sessao.to_dict()
+
+
+class PedidoAnalise(BaseModel):
+    prompt: str = "Resuma este documento, dizendo quem fez o quê."
+    modelo: str = ""
+
+
+@app.post("/api/doc/{doc_id}/analisar")
+def analisar(
+    corpo: PedidoAnalise, sessao: Sessao = Depends(pegar_sessao)
+) -> dict:
+    """Manda o texto pseudonimizado para análise por LLM externa.
+
+    Esta rota é a única do sistema que faz conteúdo sair da máquina, e ela
+    própria **não** tem saída de rede: o serviço `ui` vive numa rede
+    `internal: true`. Quem fala com o OpenRouter é o serviço `analise`, que não
+    monta a pasta das sessões e portanto nunca vê o original.
+
+    Três travas antes de qualquer byte sair, na ordem:
+
+    1. o texto existe e passou por `verify_texto` (`pode_baixar_texto`);
+    2. a re-detecção sobre o texto de saída não acha nada que a política
+       mandava substituir (`conferir_antes_do_envio`);
+    3. o envio é por documento, numa chamada explícita — não existe
+       configuração global que ligue isso e depois seja esquecida.
+
+    Nenhuma delas prova que tudo que era dado pessoal foi detectado. Isso não
+    é provável por nenhuma verificação automática, e está dito em
+    `docs/05-politica-llm.md` §2.6.
+    """
+    if not sessao.pode_baixar_texto:
+        raise HTTPException(
+            409,
+            "não há texto pseudonimizado verificado; gere-o antes de analisar",
+        )
+
+    achados = sessao.conferir_antes_do_envio(
+        lambda texto, limiar: pipeline().analyze(texto, score_threshold=limiar)
+    )
+    if achados:
+        # Entidade e posição, nunca o valor — ver `conferir_antes_do_envio`.
+        raise HTTPException(
+            409,
+            {
+                "erro": "a conferência de pré-envio encontrou dado que deveria "
+                        "ter sido substituído; nada foi enviado",
+                "achados": achados,
+            },
+        )
+
+    texto = sessao.texto_pseudo.read_text(encoding="utf-8")
+    try:
+        resposta = httpx.post(
+            f"{ANALISE_URL}/analisar",
+            json={"texto": texto, "prompt": corpo.prompt, "modelo": corpo.modelo},
+            timeout=ANALISE_TIMEOUT,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            502, f"serviço de análise indisponível: {type(exc).__name__}"
+        ) from exc
+
+    if resposta.status_code != 200:
+        detalhe = resposta.json().get("erro", resposta.text[:300])
+        raise HTTPException(resposta.status_code, detalhe)
+
+    resultado = resposta.json()
+    registro = sessao.registrar_envio("openrouter", resultado)
+    return {"analise": resultado, "envio": registro}
 
 
 @app.get("/api/doc/{doc_id}/download/texto")

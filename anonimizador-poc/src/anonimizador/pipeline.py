@@ -80,8 +80,15 @@ class DetectionPipeline:
         )
 
     # -- detecção ----------------------------------------------------------
-    def analyze(self, texto: str) -> list[Span]:
-        """Detecta e resolve sobreposições, devolvendo spans disjuntos."""
+    def analyze(self, texto: str, score_threshold: Optional[float] = None) -> list[Span]:
+        """Detecta e resolve sobreposições, devolvendo spans disjuntos.
+
+        ``score_threshold`` sobrescreve o limiar só desta chamada. Existe para
+        a conferência de pré-envio (`Sessao.conferir_antes_do_envio`), que
+        precisa de um limiar mais baixo — aceitar evidência mais fraca, achar
+        mais candidatos — sem pagar o custo de carregar um segundo modelo.
+        Quem não passa o argumento tem exatamente o comportamento de antes.
+        """
         if not texto.strip():
             return []
 
@@ -89,7 +96,9 @@ class DetectionPipeline:
             text=texto,
             language=config.LANG,
             entities=self.entidades,
-            score_threshold=self.score_threshold,
+            score_threshold=(
+                self.score_threshold if score_threshold is None else score_threshold
+            ),
         )
         spans = [
             Span(

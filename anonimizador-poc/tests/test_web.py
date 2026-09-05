@@ -52,9 +52,15 @@ ALVOS = [
 
 
 class PipelineDuble:
-    """Devolve spans achando os alvos por busca literal no texto extraído."""
+    """Devolve spans achando os alvos por busca literal no texto extraído.
 
-    def analyze(self, texto: str):
+    ``score_threshold`` é aceito e ignorado: o dublê não pontua, mas precisa
+    ter a mesma assinatura de ``DetectionPipeline.analyze`` para o caminho da
+    conferência de pré-envio (`Sessao.conferir_antes_do_envio`) exercitar o
+    código real em vez de esbarrar no dublê.
+    """
+
+    def analyze(self, texto: str, score_threshold: float | None = None):
         spans = []
         for valor, entidade in ALVOS:
             pos = texto.find(valor)

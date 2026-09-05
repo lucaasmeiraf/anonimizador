@@ -52,6 +52,13 @@ MANUAL = "MANUAL"
 
 TTL_PADRAO = 2 * 60 * 60  # 2 h
 
+# Limiar da conferência de pré-envio. Mais baixo que o `SCORE_THRESHOLD` de
+# 0.35 da detecção normal, e a razão é que a conta de custo se inverte: no
+# fluxo normal, falso positivo custa trabalho de revisão; antes de um envio
+# externo, falso positivo custa recusar um envio seguro, e falso negativo
+# custa mandar um nome real para um terceiro, sem desfazer.
+LIMIAR_PRE_ENVIO = 0.20
+
 
 @dataclass
 class SpanUI:
@@ -107,6 +114,10 @@ class Sessao:
     # (`verify_texto`), e a mesma edição invalida os dois.
     texto_pseudo: Path | None = None
     relatorio_texto: dict | None = None
+    # Trilha de auditoria dos envios externos. Metadado apenas — sem conteúdo
+    # enviado, sem resposta recebida. Não é apagada por `_invalidar`: o envio
+    # aconteceu, e editar o documento depois não o desfaz.
+    envios: list[dict] = field(default_factory=list)
 
     # -- política ---------------------------------------------------------
     def operador_de(self, entidade: str) -> str:
@@ -555,6 +566,74 @@ class Sessao:
         )
         return self.relatorio_texto
 
+    def conferir_antes_do_envio(self, detectar) -> list[dict]:
+        """Roda a detecção **de novo**, sobre o texto já pseudonimizado.
+
+        Exigência do `goal-fase-3.md` §2, opção (b): antes de qualquer envio a
+        um serviço externo, procurar no texto de saída o que deveria ter saído
+        dele. É barato e pega o caso "sobrou uma ocorrência" — que é
+        exatamente o defeito que o dublê de teste reproduziu e que a detecção
+        real também comete, medida em cerca de 1 documento a cada 50.
+
+        O limiar é mais baixo de propósito. Na detecção normal, 0.35 descarta
+        padrão numérico cru sem âncora, porque falso positivo custa trabalho
+        de revisão. Aqui a conta inverte: o custo de um falso positivo é
+        recusar um envio que era seguro, e o custo de um falso negativo é
+        mandar um nome real para um terceiro, sem desfazer. Vale errar para o
+        lado de recusar.
+
+        ``detectar`` recebe ``(texto, limiar)`` e devolve spans — injetado em
+        vez de importado para esta regra ser testável sem carregar 1 GB de
+        pesos.
+
+        Devolve **entidade e posição, nunca o valor.** Um achado aqui é sinal
+        de PII que sobreviveu; copiá-lo para a resposta da API ou para o log
+        criaria uma segunda cópia do dado exatamente no momento em que
+        descobrimos que ele não deveria estar em lugar nenhum.
+        """
+        if not self.pode_baixar_texto:
+            raise RuntimeError("texto pseudonimizado ausente ou reprovado")
+
+        texto = self.texto_pseudo.read_text(encoding="utf-8")
+        achados = []
+        for span in detectar(texto, LIMIAR_PRE_ENVIO):
+            # Só conta o que a política mandava substituir. `ORGANIZATION`
+            # nasce em `manter` porque a LAI cobra que o órgão do ato continue
+            # legível — encontrá-lo aqui é o sistema funcionando, não falha.
+            if self.operador_de(span.entity) != TARJA:
+                continue
+            achados.append(
+                {"entidade": span.entity, "inicio": span.start, "fim": span.end}
+            )
+        return achados
+
+    def registrar_envio(self, destino: str, resultado: dict) -> dict:
+        """Trilha de auditoria do que saiu da máquina.
+
+        Sem isto o envio externo é um caminho sem dono: ninguém consegue dizer
+        depois o que foi mandado, para onde e quando. Registra metadado —
+        contagem, modelo, duração — e **nada** do conteúdo enviado ou
+        recebido.
+        """
+        registro = {
+            "quando": time.time(),
+            "destino": destino,
+            "modelo": resultado.get("modelo"),
+            "caracteres_enviados": resultado.get("caracteres_enviados"),
+            "tokens_prompt": resultado.get("tokens_prompt"),
+            "tokens_saida": resultado.get("tokens_saida"),
+            "duracao_s": resultado.get("duracao_s"),
+        }
+        self.envios.append(registro)
+        logger.info(
+            "sessao %s: enviado a %s (%s), %s caracteres",
+            self.doc_id,
+            destino,
+            registro["modelo"],
+            registro["caracteres_enviados"],
+        )
+        return registro
+
     @property
     def pode_baixar_texto(self) -> bool:
         return bool(
@@ -648,6 +727,7 @@ class Sessao:
             "relatorio": self.relatorio,
             "pode_baixar_texto": self.pode_baixar_texto,
             "relatorio_texto": self.relatorio_texto,
+            "envios": self.envios,
         }
 
     def span_dict(self, s: SpanUI) -> dict:
