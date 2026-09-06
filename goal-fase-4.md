@@ -82,21 +82,74 @@ desenho de aplicação defende.
 
 ---
 
-## 3. Decisões antes do código
+## 3. Decisões — respondidas em 2026-09-05
 
-- [ ] **Provedor de identidade.** Usuário e senha próprios, ou federar (OIDC /
-      Entra ID / Google)? Cliente institucional quase sempre exige federação,
-      e implementá-la depois muda o modelo de sessão. Resposta afeta o §5.
-- [ ] **Quem cria inquilino e usuário.** Auto-cadastro, convite, ou provisão
-      manual pelo operador? Para venda a empresa, convite é o mais provável;
-      auto-cadastro exige verificação de e-mail e abre superfície.
-- [ ] **Papéis.** O mínimo honesto é dois: quem **revisa** e quem **aprova**.
-      Separá-los é o que dá sentido à trilha — se a mesma pessoa faz tudo, a
-      trilha registra, mas não controla nada.
+- [x] **Provedor de identidade: senha própria, com estrutura para federação.**
+      Não é "senha agora, refatora depois": a identidade nasce com
+      `provedor` + `subject`, e senha é **um** provedor entre outros. Adicionar
+      OIDC depois acrescenta uma linha na tabela de provedores e uma rota de
+      callback — não toca no modelo de sessão nem na autorização.
+
+- [x] **Cadastro: por mim (plataforma) ou por convite.** Sem e-mail nesta
+      fase. Existe uma tela de **solicitações de cadastro**, visível para a
+      plataforma e para o dono do inquilino, e a aprovação cria o usuário.
+
+      > **Consequência que vem junto e precisa ser aceita: sem e-mail não há
+      > autoatendimento de senha.** Nem entrega de credencial, nem "esqueci
+      > minha senha". A aprovação gera uma **senha temporária de uso único**
+      > que o aprovador entrega por fora, e o primeiro login **obriga** a
+      > troca. Redefinição de senha é ação de administrador. É aceitável
+      > agora, e é dívida registrada — não descuido.
+
+- [x] **Papéis: por escopo de acesso, não por estágio do fluxo.**
+
+      A primeira redação deste documento propunha separar **quem revisa** de
+      **quem aprova**. Está errado para este produto, e a objeção veio do dono
+      do produto: *"a própria pessoa que está anonimizando já precisa revisar
+      a anonimização antes de analisar com a IA"*.
+
+      Ele tem razão. O sistema é desenhado desde a Fase 1 em torno de **uma
+      pessoa** que revisa e assina embaixo — é o que o README e o `CLAUDE.md`
+      afirmam, e é o laço central do produto. Exigir um segundo par de olhos
+      criaria atrito onde nada o pedia. Segregação de funções é um padrão
+      legítimo importado do lugar errado.
+
+      Os papéis que separam algo real aqui:
+
+      | Papel | Documento | Trilha | Usuários | Alcance |
+      |---|---|---|---|---|
+      | `operador` | **loop completo**: envia, revisa, aprova, baixa, analisa | os próprios | não | o inquilino dele |
+      | `dono` | idem | **do inquilino** | convida e aprova | o inquilino dele |
+      | `plataforma` | **nenhum** | operacional, sem conteúdo | cria inquilino, aprova cadastro | **todos** |
+
+      **`plataforma` não abre documento, e isso é decisão de segurança, não
+      de conveniência.** Um super-usuário que atravessa inquilinos e ainda lê
+      documento é uma porta dos fundos por desenho — inaceitável num produto
+      cujo argumento de venda é soberania, e a primeira coisa que uma revisão
+      de segurança de cliente institucional procura. Administrar e ler são
+      eixos diferentes; só o primeiro atravessa inquilino.
+
+      Fica **fora**: um papel `auditor` somente-leitura da trilha, sem acesso
+      a documento. É o que um encarregado de dados pediria, e provavelmente
+      vira Fase 5. E a segunda aprovação obrigatória, se algum cliente exigir,
+      entra como **política opcional do inquilino** — nunca como padrão.
+
 - [ ] **Retenção da trilha.** Por quanto tempo? Trilha eterna é risco eterno,
       e ela contém metadado de documento (nome do arquivo, contagens).
-- [ ] **Onde o banco vive.** Container agora (decidido). Nuvem depois muda a
+- [x] **Onde o banco vive: container, rede `interna`.** Nuvem depois muda a
       prova de rede — ver §7.
+
+### Provisionamento por automação, depois
+
+Registrado porque muda o desenho agora, não depois: a intenção é automatizar o
+provisionamento mais adiante (via MCP ou automação interna). Então **criar
+usuário e aprovar solicitação nascem como rota de API**, com a tela consumindo
+a mesma rota — não como formulário que só a tela sabe chamar.
+
+Isso traz junto uma exigência: a rota de provisionamento é privilegiada e
+precisa de autenticação própria de serviço (token de serviço com escopo), não
+da sessão de um humano. Um caminho de automação que aceita cookie de navegador
+é um caminho de CSRF com privilégio de administrador.
 
 ---
 
@@ -109,15 +162,36 @@ UUID gerado pela aplicação, não sequência do banco.
 
 ```
 inquilino    id, nome, criado_em, ativo
-usuario      id, inquilino_id, email, senha_hash, papel, ativo,
-             criado_em, ultimo_acesso
+
+usuario      id, inquilino_id, email, papel, ativo,
+             criado_em, ultimo_acesso, troca_senha_obrigatoria
+             -- papel: operador | dono | plataforma
+             -- `inquilino_id` NULO para `plataforma`: ela não pertence a um
+             --  inquilino, e é justamente por isso que não abre documento.
+
+identidade   id, usuario_id, provedor, subject, segredo_hash, criado_em
+             -- provedor: 'senha' hoje; 'oidc:<emissor>' depois.
+             -- `subject` é o e-mail no provedor 'senha' e o `sub` do token
+             --  no OIDC. `segredo_hash` só existe no provedor 'senha'.
+             -- É esta tabela que torna a federação um acréscimo, não uma
+             --  refatoração: a sessão referencia `usuario`, nunca a senha.
+
+solicitacao  id, inquilino_id, email, nome, quando, estado, decidida_por
+             -- estado: pendente | aprovada | recusada
+
 sessao_dono  doc_id, inquilino_id, usuario_id, criado_em
              -- só a POSSE. O conteúdo da sessão não entra aqui.
+
 trilha       id, inquilino_id, usuario_id, doc_id, acao, quando,
              detalhe_json_curto
              -- acao: upload | revisao | aprovacao | download |
              --       pseudonimizar | envio_externo | remocao
+
 login_falho  email, ip, quando        -- para o limite de tentativa
+
+token_servico id, nome, escopo, token_hash, criado_em, revogado_em
+             -- para o provisionamento automatizado (§3). Escopo restrito;
+             --  nunca serve para abrir documento.
 ```
 
 **`trilha.detalhe` nunca carrega valor de PII.** Contagem, entidade, vetor,
@@ -172,8 +246,20 @@ detalhe — é o campo mais fácil de vazar PII para dentro do banco sem percebe
 - [ ] `auth.py`: hash, verificação, criação de sessão de login, limite de
       tentativa.
 - [ ] Rotas de login, logout e troca de senha.
+- [ ] **Troca obrigatória no primeiro acesso**, e enquanto ela não acontecer a
+      sessão só alcança a rota de troca. Sem isso a senha temporária vira
+      permanente, que é o padrão de falha de todo provisionamento sem e-mail.
 - [ ] Dependência do FastAPI que resolve o usuário atual e **falha fechado**:
       sem sessão válida, 401 — nunca "segue como anônimo".
+
+**Bloco 2b — cadastro sem e-mail**
+- [ ] Tabela e rota de **solicitação de cadastro**; tela para `dono` e
+      `plataforma`.
+- [ ] Aprovação cria o usuário e devolve senha temporária de uso único,
+      exibida **uma vez** a quem aprovou. Não é armazenada em claro.
+- [ ] Redefinição de senha por administrador, pelo mesmo caminho.
+- [ ] Rota de provisionamento aceita **token de serviço**, não cookie de
+      sessão (§3). Escopo do token nunca alcança documento.
 
 **Bloco 3 — inquilino e posse**
 - [ ] `sessao_dono` gravado na criação do documento.
@@ -228,6 +314,19 @@ nova. Quando essa hora chegar, é decisão consciente, não efeito colateral.
 - Senha não é recuperável do banco: só hash, com algoritmo lento.
 - Tentativas de login são limitadas, e o limite é testado.
 - Logout invalida a sessão de fato — não só apaga o cookie do navegador.
+- Enquanto a troca obrigatória não acontece, nenhuma outra rota responde.
+
+**Papéis**
+- `plataforma` recebe **404 em toda rota de documento**, de todo inquilino.
+  É o teste que trava a decisão do §3: administrar e ler são eixos separados,
+  e o super-usuário não atravessa para dentro do documento.
+- `operador` não alcança a trilha do inquilino nem convida usuário.
+- Token de serviço não abre documento, em nenhuma rota.
+
+**Federação preparada**
+- Existe teste que cria um usuário com `provedor` diferente de `senha` e o
+  autentica sem passar por senha alguma. É o que prova que a estrutura serve —
+  sem ele, "preparado para federação" é intenção, não fato.
 
 **O que não pode regredir**
 - `make ui-proof`, `make llm-proof` e `make offline-proof` continuam verdes.
