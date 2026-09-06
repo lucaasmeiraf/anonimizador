@@ -288,9 +288,10 @@ anonimizador-poc/
   src/anonimizador/                pipeline, reconhecedores, redator, verificador
     web/                           API, sessão, estáticos, prova de rede
   eval/                            corpus sintético, avaliação, diagnóstico
-  docs/01..06                      inventário, requisitos, configuração,
-                                   implantação, política de LLM, resultados F0
-  tests/                           161 testes
+  docs/01..07                      inventário, requisitos, configuração,
+                                   implantação, política de LLM, resultados F0,
+                                   modelo de produto (planos PF e empresa)
+  tests/                           296 testes (+9 marcados slow)
 ```
 
 `docs/02-requisitos.md` tem a tabela de requisitos normativos (RN-01..RN-07) e

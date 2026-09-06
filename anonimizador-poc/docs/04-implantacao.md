@@ -289,6 +289,74 @@ Confirme a integridade após a carga:
 docker compose run --rm offline-proof
 ```
 
+## Passo 14b — Comandos do dia a dia
+
+Referência rápida. Todos rodam de `anonimizador-poc/`; no Windows sem `make`,
+troque por `.\run.ps1 <alvo>`.
+
+| Comando | O que faz | Precisa de rede? |
+|---|---|---|
+| `make build` | constrói a imagem | **sim** — única etapa |
+| `make ui` | interface em `127.0.0.1:8000` | não |
+| `make ui-llm` | interface **+** serviço de análise por LLM | o `analise`, sim |
+| `make ui-down` | derruba tudo | não |
+| `make ui-proof` | a porta responde **e** o `ui` não tem egress | não |
+| `make llm-proof` | o `ui` segue sem egress; o `analise` não vê documento | o `analise`, sim |
+| `make offline-proof` | o pipeline roda sem interface de rede | não |
+| `make test` | 296 testes rápidos | não |
+| `make test-all` | inclui os 9 marcados `slow` (carregam modelo) | não |
+| `make eval` | avaliação nas 3 configurações de NER (~5,5 min) | não |
+| `make diagnostico` | por que `PERSON` vaza | não |
+| `make corpus` | regenera os 50 PDFs sintéticos | não |
+
+Pela CLI, um documento por vez:
+
+```bash
+docker compose run --rm cli redact        --in /app/data/x.pdf --out /app/out/x.pdf
+docker compose run --rm cli pseudonimizar --in /app/data/x.pdf --out /app/out/x.txt
+docker compose run --rm cli analyze       --in /app/data/x.pdf
+```
+
+Nos dois primeiros, **se a verificação reprovar, nada é escrito** e o código de
+saída é 1. Não existe arquivo reprovado em disco, por desenho.
+
+### A chave do OpenRouter
+
+```bash
+cp .env.example .env     # cole a chave em OPENROUTER_API_KEY
+make ui-llm
+```
+
+O `.env` é ignorado pelo git **e** pelo Docker. A chave é lida apenas pelo
+serviço `analise`; o `ui`, que processa o documento, não a recebe.
+
+### Armadilha: mexeu no código, reinicie o `ui`
+
+O compose monta `./src` no container, mas isso **não** recarrega o processo em
+execução. O `uvicorn` sobe sem `--reload`, e há dois níveis de cache:
+
+1. os módulos são importados uma vez, na subida;
+2. o `DetectionPipeline` é construído uma vez e guardado em `_pipeline` — e
+   cada `ChecksumRecognizer` copia sua lista de âncoras **no momento da
+   construção**.
+
+Consequência prática, e ela já custou uma sessão inteira de depuração em
+2026-09-05: depois de editar um reconhecedor, `docker compose exec ui python -c
+"..."` mostra o código **novo** (é um processo novo) enquanto a interface
+continua servindo o **antigo**. Os dois discordam, e o teste parece falhar sem
+motivo.
+
+```bash
+docker compose restart ui
+docker compose logs -f ui     # espere "pipeline pronto" (~30 s)
+```
+
+Regra: **mexeu em `src/`, reinicie o `ui` antes de testar pela interface.** Os
+alvos `make test` e `make eval` não sofrem disso — sobem processo novo a cada
+execução.
+
+---
+
 ## Passo 15 — Operação
 
 Estrutura mínima no ambiente do cliente:
@@ -330,14 +398,21 @@ Sendo direto: **o que existe hoje é um pipeline de linha de comando validado
 por métricas, não um produto.** Vender o que está aqui como produto final seria
 prometer o que não existe. O que falta, em ordem de dependência:
 
+> Atualizado em 2026-09-05. Três linhas desta tabela mudaram de estado, e uma
+> saiu: o **cofre de reversibilidade** foi encerrado, não adiado. Guardar o
+> original com controle de acesso resolve "voltar atrás" sem nenhum custo
+> jurídico, enquanto guardar uma chave devolveria o arquivo de saída para
+> dentro do alcance da LGPD. Ver `goal-fase-2.md` §5, Bloco B0.
+
 | Falta | Fase | Por que importa |
 |---|---|---|
-| Interface de revisão humana | 1 | sem ela, não há como oferecer garantia sobre nomes em texto livre |
+| ~~Interface de revisão humana~~ | 1 | ✅ existe; falta medir o gate de usabilidade com pessoas |
 | Processamento em lote com fila e retomada | 1 | hoje é um documento por invocação |
-| Cofre de reversibilidade | 2 | é o diferencial competitivo central do projeto |
-| Controle de acesso e trilha de auditoria | 2 | exigência de qualquer cliente institucional |
+| ~~Cofre de reversibilidade~~ | — | ⛔ **encerrado**; guardar o original resolve, sem custo jurídico |
+| **Autenticação e controle de acesso** | — | **não existe nenhum**. Ver abaixo: é o que bloqueia mais de uma pessoa usar |
+| Trilha de auditoria do documento | 4 | existe para envio externo; falta para upload, revisão e download |
 | OCR de PDF escaneado | futuro | grande parte do acervo público é digitalizada |
-| Copiloto de configuração (Ollama local) | 3 | reduz o custo de calibrar por cliente |
+| ~~Copiloto de configuração~~ | 3 | ✅ análise por LLM externa existe; falta tela |
 | Assessment de risco de reidentificação documentado | 4 | a ANPD pode exigir em fiscalização |
 | Empacotamento, instalador, atualização | 4 | hoje a implantação é manual |
 

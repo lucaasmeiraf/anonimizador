@@ -289,7 +289,7 @@ O modelo leva cerca de 30 segundos para carregar na primeira subida.
 
 ```powershell
 .\run.ps1 ui-proof   # prova que a interface responde E que não há saída para a internet
-.\run.ps1 test       # 217 testes
+.\run.ps1 test       # 296 testes
 ```
 
 ---
@@ -357,4 +357,5 @@ Nenhum documento real entra no ambiente de desenvolvimento.
 | Quem calibra para um caso de uso | [`docs/03-configuracao.md`](anonimizador-poc/docs/03-configuracao.md) |
 | Quem valida escopo ou monta proposta | [`docs/02-requisitos.md`](anonimizador-poc/docs/02-requisitos.md) |
 | Quem decide arquitetura | [`docs/06-resultados-fase-0.md`](anonimizador-poc/docs/06-resultados-fase-0.md) e os `goal-fase-*.md` |
+| **Quem decide o modelo de negócio** | [`docs/07-modelo-de-produto.md`](anonimizador-poc/docs/07-modelo-de-produto.md) — os dois planos, quem hospeda, e o que bloqueia a venda |
 | Quem escreve código | [`CLAUDE.md`](CLAUDE.md) — invariantes e regras de mudança |
