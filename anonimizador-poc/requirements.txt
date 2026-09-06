@@ -25,3 +25,25 @@ python-multipart==0.0.20
 # Testes
 pytest==8.4.2
 httpx==0.28.1
+
+# Persistencia (Fase 4) — identidade, inquilino e trilha.
+# NUNCA documento: ver goal-fase-4.md secao 1.
+#
+# Licencas conferidas em 2026-09-05 contra os metadados do PyPI, porque o
+# CLAUDE.md secao 6 exige verificar antes de adicionar e a lista de pendencias
+# ja tem RN-04 e RN-05.
+#
+#   SQLAlchemy   MIT
+#   alembic      MIT
+#   pg8000       BSD 3-Clause
+#   argon2-cffi  MIT
+#
+# pg8000 e nao psycopg2-binary: aquele e "LGPL with exceptions". O copyleft
+# quase certamente nao morderia — biblioteca importada dinamicamente e
+# substituivel —, mas "quase certamente" e o que a regra manda recusar quando
+# existe alternativa permissiva sem custo. pg8000 e Python puro, e dialeto
+# oficial do SQLAlchemy, e a carga aqui e autenticacao e auditoria, nao vazao.
+SQLAlchemy==2.0.52
+alembic==1.19.2
+pg8000==1.31.5
+argon2-cffi==25.1.0

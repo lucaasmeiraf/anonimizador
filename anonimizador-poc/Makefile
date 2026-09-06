@@ -6,7 +6,7 @@
 COMPOSE := docker compose
 GPU     := -f docker-compose.yml -f docker-compose.gpu.yml
 
-.PHONY: help build test test-all corpus eval eval-fast diagnostico gate-usabilidade gate-usabilidade-apurar ui ui-down ui-proof ui-llm llm-proof offline-proof shell demo clean gpu-build gpu-eval
+.PHONY: help build test test-all corpus eval eval-fast diagnostico gate-usabilidade gate-usabilidade-apurar ui ui-down ui-proof ui-llm llm-proof db-upgrade db-revision db-shell offline-proof shell demo clean gpu-build gpu-eval
 
 help:
 	@echo ""
@@ -24,6 +24,9 @@ help:
 	@echo "  ui-proof       prova que a UI responde E nao tem egress"
 	@echo "  ui-llm         sobe a UI + o servico de analise por LLM externa"
 	@echo "  llm-proof      prova que o ui segue sem egress e que o analise nao ve o original"
+	@echo "  db-upgrade     aplica as migracoes do banco de identidade"
+	@echo "  db-revision    gera migracao nova: make db-revision M=\"descricao\""
+	@echo "  db-shell       psql no banco de identidade"
 	@echo "  offline-proof  prova que o pipeline roda sem rede"
 	@echo "  demo           redige um documento do corpus e mostra o resultado"
 	@echo "  shell          shell interativo no container"
@@ -105,6 +108,18 @@ llm-proof:
 	@echo ""
 	@echo "--- 3: o servico analise TEM egress (e o unico que precisa) ---"
 	$(COMPOSE) exec -T analise python -c "import socket; socket.create_connection(('1.1.1.1',443),timeout=5).close(); print('  egress presente: ok')"
+
+# Migracoes do banco de identidade. Esquema que muda sem historico e o que
+# impede atualizar a instalacao de um cliente.
+db-upgrade:
+	$(COMPOSE) run --rm cli-db upgrade head
+
+db-revision:
+	@test -n "$(M)" || (echo 'uso: make db-revision M="descricao da mudanca"'; exit 1)
+	$(COMPOSE) run --rm cli-db revision --autogenerate -m "$(M)"
+
+db-shell:
+	$(COMPOSE) exec postgres psql -U $${POSTGRES_USER:-anonimizador} -d $${POSTGRES_DB:-anonimizador}
 
 offline-proof:
 	$(COMPOSE) run --rm offline-proof

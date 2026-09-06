@@ -14,8 +14,17 @@
 #     que precisa ser alcancavel. O egress continua bloqueado pelo kernel,
 #     subprocesso incluido (medido; ver src/anonimizador/web/forward.py).
 #
-# O `ui-proxy` e o unico container com saida de rede. Ele nao processa
-# documento: roda `web/forward.py`, que copia bytes entre sockets.
+# Exatamente DOIS containers tem saida de rede, e os dois sao pequenos de
+# proposito — quem tem rede nao tem arvore de dependencias:
+#
+#   * `ui-proxy`  copia bytes entre a porta publicada e o `ui`. Nao interpreta
+#                 HTTP, nao le PDF, nao importa nada alem da biblioteca padrao.
+#
+#   * `analise`   manda o texto ja pseudonimizado e ja verificado ao OpenRouter.
+#                 Nao monta ./out, entao nao alcanca o documento original.
+#
+# O `postgres` NAO e um terceiro: ele fica na rede `interna`, sem rota para
+# fora. Guarda identidade e trilha, nunca documento — ver goal-fase-4.md §1.
 
 # Configuracao da imagem, sem politica de rede.
 x-imagem: &imagem
@@ -93,14 +102,42 @@ services:
   # Faz TODO o trabalho: deteccao, redacao, verificacao, render de pagina.
   # Fica na rede interna, sem egress. Nao publica porta — e inalcancavel do
   # host de proposito; quem a alcanca e o `ui-proxy`.
+
+  # Identidade, inquilino e trilha. NUNCA documento — ver goal-fase-4.md §1.
+  #
+  # Fica na rede `interna`, como o `ui`: sem rota para fora. E isso e o que
+  # mantem `make ui-proof` valendo sem alteracao. Um banco gerenciado na nuvem
+  # exigiria que o `ui` alcancasse a rede, e a garantia mudaria de "nao existe
+  # interface de rede" para "existe rota so para o banco" — mais fraca, e
+  # decisao consciente quando chegar a hora.
+  postgres:
+    image: postgres:17-alpine
+    networks: [interna]
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-anonimizador}"
+      POSTGRES_USER: "${POSTGRES_USER:-anonimizador}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    expose: ["5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-anonimizador}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   ui:
     <<: *imagem
     networks: [interna]
+    depends_on:
+      postgres:
+        condition: service_healthy
     entrypoint: ["python", "-m", "uvicorn"]
     command: ["anonimizador.web.app:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       ANON_NER: "${ANON_NER:-bert-lenerbr}"
       ANON_ANALISE_URL: "http://analise:8100"
+      ANON_DB_URL: "postgresql+pg8000://${POSTGRES_USER:-anonimizador}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-anonimizador}"
     expose: ["8000"]
 
   # Analise por LLM externa. A SEGUNDA peca com saida de rede, e a unica que
@@ -137,8 +174,9 @@ services:
       ANON_ANALISE_MAX_CHARS: "${ANON_ANALISE_MAX_CHARS:-200000}"
     expose: ["8100"]
 
-  # A unica peca com saida de rede. Nao processa documento: copia bytes.
-  # Publicado so em 127.0.0.1 — nao escuta em interface externa da maquina.
+  # Encaminhador TCP. Tem saida de rede, mas nao processa documento: copia
+  # bytes entre sockets. Publicado so em 127.0.0.1 — nao escuta em interface
+  # externa da maquina.
   ui-proxy:
     <<: *imagem
     networks: [interna, externa]
@@ -151,3 +189,30 @@ services:
   # CLI livre: docker compose run --rm cli redact --in ... --out ...
   cli:
     <<: *base
+
+  # Migracoes do banco de identidade.
+  #
+  #   docker compose run --rm cli-db upgrade head
+  #   docker compose run --rm cli-db revision --autogenerate -m "descricao"
+  #
+  # Rede `interna` para alcancar o `postgres`, e so ele. Monta ./migracoes
+  # gravavel porque `--autogenerate` escreve arquivo novo.
+  cli-db:
+    <<: *imagem
+    networks: [interna]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src:ro
+      - ./migracoes:/app/migracoes
+      - ./alembic.ini:/app/alembic.ini:ro
+    entrypoint: ["alembic", "-c", "/app/alembic.ini"]
+    environment:
+      ANON_DB_URL: "postgresql+pg8000://${POSTGRES_USER:-anonimizador}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-anonimizador}"
+
+# Volume nomeado para o banco. Nomeado e nao bind mount de proposito: o
+# conteudo e do Postgres, nao do projeto, e nao deve aparecer na pasta que o
+# `COPY . /app` do Dockerfile enxerga.
+volumes:
+  pgdata:
