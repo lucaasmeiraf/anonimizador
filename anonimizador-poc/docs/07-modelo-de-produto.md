@@ -161,9 +161,32 @@ a resposta muda o modelo de negócio:
 Enquanto isso não estiver decidido, qualquer tabela de preço é chute.
 
 **2. RN-05 — licença do checkpoint LeNER-Br.** Não declarada. Sem licença
-declarada não há permissão de uso comercial presumida. Alternativas:
-`bertimbau-harem` (que aliás mede melhor: F1 relaxado 0.862 contra 0.774) ou
-treinar um próprio.
+declarada não há permissão de uso comercial presumida.
+
+> **Correção de 2026-09-05.** A primeira redação desta linha dizia que o
+> `bertimbau-harem` "aliás mede melhor: F1 0.862 contra 0.774", sugerindo que
+> trocar resolveria a licença e ainda melhoraria a detecção. **Citar o F1
+> sozinho foi erro meu**, e ele inverte a conclusão:
+
+| | Licença | PERSON F1 | Entidades vazadas | Docs sem vazamento |
+|---|---|---:|---:|---:|
+| `bert-lenerbr` | **não declarada** | 0.774 | **1** | **49/50** |
+| `bertimbau-harem` | MIT | 0.862 | **12** | 42/50 |
+
+O `bert-lenerbr` tem F1 pior porque marca fronteiras desleixadas — 124 nomes
+"cobertos em parte" contra 8 do `bertimbau`. Mas cobertura parcial **não
+vaza**: o valor não sobrevive inteiro, e o verificador não o encontra. O
+`bertimbau` é mais preciso no que acerta e erra por inteiro em 12 casos.
+
+Para este produto a métrica que manda é a segunda, e o CLAUDE.md já diz por
+quê: *errar o rótulo não vaza, deixar de tarjar vaza.* **Trocar de checkpoint
+só para resolver a licença multiplicaria o vazamento por 12.**
+
+O caminho que `01-inventario-marco-zero.md` §3 já apontava continua sendo o
+certo, e agora com um motivo a mais: pedir declaração expressa ao autor, ou
+**refazer o fine-tuning sobre o LeNER-Br a partir do BERTimbau (MIT)** — o que
+dá procedência limpa **e** mantém o desempenho de domínio jurídico, em vez de
+escolher entre os dois.
 
 **3. O gate de usabilidade nunca foi medido.** A afirmação central do produto é
 que uma pessoa revisa e corrige o que a máquina errou. Isso nunca foi testado
