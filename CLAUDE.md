@@ -284,6 +284,7 @@ verificar licença — a lista de pendências já é grande o bastante.
 ```
 goal-fase-0.md .. goal-fase-3.md   escopo e decisões por fase (fase 1 em andamento)
 goal-fase-2a.md                    recorte executável da Fase 2A: token + saída de texto
+goal-fase-4.md                     identidade, inquilino e trilha
 anonimizador-poc/
   src/anonimizador/                pipeline, reconhecedores, redator, verificador
     web/                           API, sessão, estáticos, prova de rede
