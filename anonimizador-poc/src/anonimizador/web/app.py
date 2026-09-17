@@ -192,6 +192,26 @@ def remover_span(span_id: str, sessao: Sessao = Depends(pegar_sessao)) -> dict:
     return sessao.to_dict()
 
 
+class AlternarManuais(BaseModel):
+    ativo: bool
+
+
+@app.patch("/api/doc/{doc_id}/manuais")
+def alternar_manuais(
+    corpo: AlternarManuais, sessao: Sessao = Depends(pegar_sessao)
+) -> dict:
+    """Liga ou desliga em lote os trechos que o usuário apontou.
+
+    `PATCH` e não `PUT /perfil`: isto não muda política de entidade, muda o
+    estado de trechos específicos — o mesmo que o clique individual faz, em
+    lote. Ver `Sessao.alternar_manuais`.
+    """
+    n = sessao.alternar_manuais(corpo.ativo)
+    resposta = sessao.to_dict()
+    resposta["alterados"] = n
+    return resposta
+
+
 @app.delete("/api/doc/{doc_id}/manuais")
 def remover_manuais(sessao: Sessao = Depends(pegar_sessao)) -> dict:
     n = sessao.remover_manuais()

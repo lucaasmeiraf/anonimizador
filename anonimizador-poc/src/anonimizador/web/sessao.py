@@ -457,6 +457,33 @@ class Sessao:
         self._invalidar()
         logger.info("sessao %s: span %s removido", self.doc_id, span_id)
 
+    def alternar_manuais(self, ativo: bool) -> int:
+        """Liga ou desliga de uma vez todos os trechos apontados à mão.
+
+        Existe porque a caixa de `MANUAL` na lista não podia funcionar pelo
+        caminho do perfil: `MANUAL` não é entidade de política — é origem —, e
+        `validar_perfil` recusa regra para ela, com razão. A caixa governa o
+        padrão de uma classe detectada, e trecho apontado à mão não tem classe.
+
+        Então o lote usa o mesmo caminho do clique individual: mexe em
+        ``ativo``, não na política. A regra de que a decisão explícita vence o
+        padrão da classe continua inteira — desligar em lote também é decisão
+        explícita.
+
+        **Desligar não é apagar.** ``remover_manuais`` remove os trechos da
+        proposta; aqui o retângulo continua na tela, tracejado, e o revisor
+        segue enxergando o que apontou e resolveu não usar.
+        """
+        ids = [k for k, s in self.spans.items() if s.origem == "usuario"]
+        for k in ids:
+            self.spans[k].ativo = ativo
+        if ids:
+            self._invalidar()
+        logger.info(
+            "sessao %s: %d trecho(s) manuais -> ativo=%s", self.doc_id, len(ids), ativo
+        )
+        return len(ids)
+
     def remover_manuais(self) -> int:
         """Apaga todos os trechos adicionados à mão. O desfazer do campo."""
         ids = [k for k, s in self.spans.items() if s.origem == "usuario"]

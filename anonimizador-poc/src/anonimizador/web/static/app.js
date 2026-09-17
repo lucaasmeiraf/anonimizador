@@ -460,15 +460,24 @@ function montarInventario() {
     const chk = document.createElement("input");
     chk.type = "checkbox";
     chk.checked = c.tarjados > 0;
-    // Sem ocorrência não há o que ligar; MANUAL é sempre tarjado por ser
-    // intenção explícita do usuário.
-    chk.disabled = vazia || entidade === "MANUAL";
+    // Sem ocorrência não há o que ligar.
+    //
+    // `MANUAL` era desabilitada aqui, e esse era o defeito D-02: o usuário
+    // clicava para desligar tudo o que tinha apontado e nada acontecia. Ela
+    // funciona agora, por um caminho próprio — `MANUAL` não é entidade de
+    // política, então mexer no perfil dela seria recusado pelo servidor, com
+    // razão. O lote mexe no estado dos trechos, como o clique individual.
+    chk.disabled = vazia;
     chk.title = vazia
       ? "nenhuma ocorrência encontrada neste documento"
       : entidade === "MANUAL"
-        ? "trechos que você apontou; sempre tarjados"
+        ? "ligar/desligar de uma vez os trechos que você apontou"
         : "ligar/desligar a classe inteira";
-    chk.addEventListener("change", () => alternarEntidade(entidade, chk.checked));
+    chk.addEventListener("change", () =>
+      entidade === "MANUAL"
+        ? alternarManuais(chk.checked)
+        : alternarEntidade(entidade, chk.checked)
+    );
 
     const nome = document.createElement("span");
     nome.className = "nome";
@@ -535,6 +544,16 @@ async function trocarModo(modo) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ nome: "personalizado", padrao: modo, regras }),
+  });
+  limparResultado();
+  redesenhar();
+}
+
+async function alternarManuais(ligar) {
+  doc = await enviar("/manuais", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ativo: ligar }),
   });
   limparResultado();
   redesenhar();
