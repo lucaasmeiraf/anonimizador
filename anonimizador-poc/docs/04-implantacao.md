@@ -217,6 +217,86 @@ etapa separada, no ambiente controlado dele.
 
 ---
 
+## Passo 10b — Abrir a interface no navegador
+
+O `redact` acima é a linha de comando. A **tela de revisão** — onde uma pessoa
+confere o que a máquina propôs e assina embaixo — é outro caminho, e é o
+produto de verdade.
+
+### 1. Subir
+
+Na pasta `anonimizador-poc`:
+
+```powershell
+.un.ps1 ui          # Windows
+make ui               # Linux, macOS, WSL
+```
+
+O comando **não** abre o navegador sozinho, e **não** devolve o prompt
+imediatamente: ele sobe dois containers e fica de pé. Na primeira subida são
+cerca de 30 segundos carregando ~1 GB de pesos do NER — a tela só responde
+depois disso.
+
+Pronto quando isto devolver `{"ok":true,...}`:
+
+```powershell
+curl http://127.0.0.1:8000/api/saude
+```
+
+### 2. Abrir
+
+Digite no navegador:
+
+```
+http://127.0.0.1:8000
+```
+
+Não é `localhost:8000` por acaso — é o mesmo endereço, mas o `ui-proxy`
+publica em `127.0.0.1` de propósito: a interface só é alcançável **desta
+máquina**. Não existe autenticação ainda (Fase 4), e é esse endereço que faz
+as vezes dela.
+
+### 3. Usar
+
+1. **Arraste um PDF** para a área central, ou clique para escolher. Só PDF com
+   texto — digitalização sem OCR é recusada com explicação, porque uma tela
+   vazia faria você concluir que o documento está limpo.
+2. **Escolha o que fica no lugar do dado** — primeiro bloco da barra lateral
+   direita:
+   - **Tarja preta**: o valor some e o espaço fica coberto.
+   - **Código no lugar** (`[P-7F3A]`): o valor some e um código ocupa o lugar,
+     preservando que havia um ator, de que tipo, e que é o mesmo ator dos
+     outros trechos. É o formato para mandar a uma análise automatizada.
+
+   Nos dois casos o valor é removido do arquivo, sem chave e sem volta.
+3. **Revise.** Clique numa tarja para desligá-la; digite ou selecione um
+   trecho que faltou; ligue e desligue classes inteiras na lista.
+4. **Aprove.** O PDF só é gerado nesse momento, e só é liberado para download
+   se passar na verificação — 10 vetores, ou 11 quando há código.
+
+> **Valor curto não comporta código.** `[CEP-2C81]` ocupa 48,0pt e um CEP
+> deixa 43,0pt de espaço; `[DATA-9E44]` ocupa 53,0pt contra 45,0pt de
+> `12/03/2026`. Em modo código, deixe `CEP` e `DATE_TIME` em tarja na lista —
+> a tela avisa. Sem isso o documento é **reprovado inteiro** na aprovação, de
+> propósito: a alternativa seria entregar a linha deformada em silêncio.
+
+### 4. Derrubar
+
+```powershell
+.un.ps1 ui-down     # ou:  docker compose down
+```
+
+### Quando não abre
+
+| Sintoma | Causa provável | O que fazer |
+|---|---|---|
+| `failed to connect to the docker API` | Docker Desktop não está rodando | abra o Docker Desktop e espere ficar verde |
+| Navegador diz "recusou a conexão" | ainda carregando o modelo | espere o `/api/saude` responder |
+| `port is already allocated` | outra coisa na 8000 | `docker compose down` e suba de novo |
+| A tela abre mas parece a versão antiga | cache do navegador | recarregue; os estáticos são carimbados com a data de modificação, então isso não deveria acontecer — se acontecer, é defeito |
+
+---
+
 # C. Implantação no cliente
 
 ## Passo 11 — Levantamento prévio

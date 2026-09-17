@@ -289,8 +289,13 @@ O modelo leva cerca de 30 segundos para carregar na primeira subida.
 
 ```powershell
 .\run.ps1 ui-proof   # prova que a interface responde E que não há saída para a internet
-.\run.ps1 test       # 296 testes
+.\run.ps1 test       # 334 testes
 ```
+
+`run.ps1 ui` não abre o navegador sozinho: suba o comando, espere o modelo
+carregar e abra **http://127.0.0.1:8000**. O passo a passo completo — usar a
+tela, escolher entre tarja e código, e o que fazer quando não abre — está em
+[`docs/04-implantacao.md`](anonimizador-poc/docs/04-implantacao.md), Passo 10b.
 
 ---
 
