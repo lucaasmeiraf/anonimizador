@@ -33,7 +33,7 @@ from typing import Mapping
 
 import fitz  # PyMuPDF
 
-from .layout import TextMap
+from .layout import TextMap, recortar_entre_fileiras
 from .spans import Span
 
 logger = logging.getLogger(__name__)
@@ -297,12 +297,17 @@ def redact_document(
         res.valores.append(span.text_of(tm.text))
         for i, (pno, rect) in enumerate(rects):
             page = doc.load_page(pno)
+            # Recorte vertical antes de anotar — defeito D-01. Só a anotação
+            # usa o retângulo recortado; `rect` continua sendo a caixa
+            # verdadeira do valor, e é dela que saem o corpo da fonte e a
+            # linha de base do token, mais abaixo.
+            caixa = recortar_entre_fileiras(page, rect)
             if token is None:
-                page.add_redact_annot(rect, fill=cor)
+                page.add_redact_annot(caixa, fill=cor)
             else:
                 # Branco, e não preto: este retângulo não é tarja. É o lugar
                 # onde o token vai ser lido — sobre barra preta, não seria.
-                page.add_redact_annot(rect, fill=BRANCO)
+                page.add_redact_annot(caixa, fill=BRANCO)
                 if i == 0:
                     # Só a primeira caixa recebe o token. Um valor que
                     # atravessa a quebra de linha tem duas caixas, e repetir o

@@ -212,3 +212,93 @@ def build_text_map(doc: "fitz.Document") -> TextMap:
 def build_text_map_from_path(caminho: str) -> tuple["fitz.Document", TextMap]:
     doc = fitz.open(caminho)
     return doc, build_text_map(doc)
+
+
+# --------------------------------------------------------------------------
+# Recorte vertical da tarja — defeito D-01
+# --------------------------------------------------------------------------
+# Fração mínima da altura original que o retângulo pode ficar depois do
+# recorte. É o limite que decide um conflito entre dois danos, e a escolha não
+# é de estilo:
+#
+#   * retângulo grande demais come o texto das linhas vizinhas;
+#   * retângulo pequeno demais **deixa o valor no documento**.
+#
+# O segundo é pior, e por muito. Então quando as fileiras se sobrepõem tanto
+# que não sobra faixa livre, o recorte para aqui e a tarja volta a encostar na
+# vizinha — de propósito. Cobrir o valor vence preservar o vizinho.
+FRACAO_MINIMA = 0.45
+
+# Folga ao recuar da caixa vizinha. `apply_redactions` remove o caractere cuja
+# caixa **encosta** no retângulo, então parar exatamente na borda ainda seria
+# encostar.
+EPSILON = 0.05
+
+
+def _fileiras_da_pagina(page: "fitz.Page") -> list[tuple[float, float, float, float]]:
+    return [
+        tuple(linha["bbox"])
+        for bloco in page.get_text("dict")["blocks"]
+        for linha in bloco.get("lines", [])
+    ]
+
+
+def recortar_entre_fileiras(page: "fitz.Page", rect: "fitz.Rect") -> "fitz.Rect":
+    """Encolhe ``rect`` verticalmente para não alcançar as fileiras vizinhas.
+
+    Existe porque ``apply_redactions`` remove todo caractere cuja caixa
+    **encosta** no retângulo, e num documento de entrelinha apertada as caixas
+    de fileiras consecutivas se sobrepõem — 12,00pt de entrelinha contra
+    13,74pt de caixa dão 1,82pt de invasão, medido em 2026-09-16. O retângulo
+    da tarja está correto; ele é que alcança o vizinho.
+
+    O recorte para **dentro** da caixa da fileira vizinha mais próxima, acima e
+    abaixo, considerando só as que dividem intervalo horizontal com o
+    retângulo — fileira distante na horizontal não corre risco nenhum.
+
+    O alvo continua sendo removido porque a caixa dele ocupa a altura inteira
+    do retângulo original: sobra interseção de sobra. Medido na faixa de 1,0 a
+    6,0pt de recuo, o valor sai em todas.
+    """
+    alvo_y0, alvo_y1 = rect.y0, rect.y1
+    altura = alvo_y1 - alvo_y0
+    if altura <= 0:
+        return rect
+
+    # `None` enquanto ninguém invade. A distinção importa: sem vizinho
+    # encostando, o retângulo sai **intacto** — recortar por precaução mudaria
+    # a saída de todo documento folgado, que é a maioria, sem corrigir nada.
+    limite_topo = None
+    limite_base = None
+    meio = alvo_y0 + altura / 2
+    for x0, y0, x1, y1 in _fileiras_da_pagina(page):
+        if x1 <= rect.x0 or x0 >= rect.x1:
+            continue  # não divide intervalo horizontal: não corre risco
+        if y0 <= meio <= y1:
+            # A fileira do próprio alvo. Sem esta linha ela entra na conta como
+            # se fosse vizinha — a caixa dela cobre a do valor, afinal — e o
+            # recorte colapsa, caindo na trava do FRACAO_MINIMA por engano.
+            # Aconteceu em 3 dos 8 retângulos do documento que originou o
+            # defeito: funcionava, mas encolhia para 45% sem motivo.
+            continue
+        centro = (y0 + y1) / 2
+        if centro < meio and y1 > alvo_y0:
+            # Fileira acima cuja caixa entra na nossa.
+            limite_topo = min(y1, alvo_y1) if limite_topo is None else max(limite_topo, min(y1, alvo_y1))
+        elif centro > meio and y0 < alvo_y1:
+            # Fileira abaixo cuja caixa entra na nossa.
+            limite_base = max(y0, alvo_y0) if limite_base is None else min(limite_base, max(y0, alvo_y0))
+
+    if limite_topo is None and limite_base is None:
+        return rect
+
+    novo_y0 = alvo_y0 if limite_topo is None else min(limite_topo + EPSILON, alvo_y1)
+    novo_y1 = alvo_y1 if limite_base is None else max(limite_base - EPSILON, alvo_y0)
+
+    # A trava do FRACAO_MINIMA: nunca encolher a ponto de arriscar o valor.
+    minima = altura * FRACAO_MINIMA
+    if novo_y1 - novo_y0 < minima:
+        centro = (alvo_y0 + alvo_y1) / 2
+        novo_y0, novo_y1 = centro - minima / 2, centro + minima / 2
+
+    return fitz.Rect(rect.x0, novo_y0, rect.x1, novo_y1)
