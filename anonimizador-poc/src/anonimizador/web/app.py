@@ -136,8 +136,12 @@ def ler_doc(sessao: Sessao = Depends(pegar_sessao)) -> dict:
 
 
 @app.delete("/api/doc/{doc_id}")
-def apagar_doc(doc_id: str) -> dict:
-    if not sessoes.remover(doc_id):
+def apagar_doc(sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    # Passa por `pegar_sessao` como as demais, e não por `doc_id` cru. A
+    # diferença não aparece hoje — o gargalo é onde a verificação de posse
+    # entra na Fase 4, e apagar documento alheio é a última coisa que pode
+    # ficar de fora dela. `test_posse_rotas.py` trava isto.
+    if not sessoes.remover(sessao.doc_id):
         raise HTTPException(404, "sessão inexistente")
     return {"removida": True}
 
