@@ -58,13 +58,22 @@ def test_perfis_de_fabrica_sao_validos(nome):
     validar_perfil(PERFIS_DE_FABRICA[nome], config.ENTIDADES_ATIVAS)
 
 
-def test_operador_nao_implementado_falha_alto():
+def test_pseudonimo_foi_liberado_com_o_executor(caplog):
+    """A trava saiu em 2026-09-16, e saiu **porque** o executor passou a existir.
+
+    Este teste era o inverso: exigia que `pseudonimo` fosse recusado. Ele
+    mudou de lado junto com A3-A8 do `goal-fase-2.md` — o escritor de token no
+    PDF existe, mede a largura antes de escrever, reprova o documento em vez
+    de deformar, e o `verify` confere a presença do token.
+
+    O que ele trava agora é o outro sentido: que ninguém desfaça a liberação
+    por engano ao mexer em `OPERADORES_IMPLEMENTADOS`.
+    """
     p = PerfilPolitica(nome="t", padrao=TARJA, regras={"PERSON": PSEUDONIMO})
-    with pytest.raises(PoliticaInvalida, match="nao implementado"):
-        validar_perfil(p, config.ENTIDADES_ATIVAS)
+    validar_perfil(p, config.ENTIDADES_ATIVAS)  # não levanta
 
 
-def test_mascara_tambem_falha_enquanto_nao_existir():
+def test_mascara_continua_recusada():
     p = PerfilPolitica(nome="t", padrao=MASCARA)
     with pytest.raises(PoliticaInvalida, match="nao implementado"):
         validar_perfil(p, config.ENTIDADES_ATIVAS)

@@ -66,6 +66,18 @@ SIGLAS_TOKEN: dict[str, str] = {
     "ORGANIZATION": "ORG",
     "LOCATION": "LOC",
     "DATE_TIME": "DATA",
+    # Trecho que o revisor apontou à mão. Não é entidade detectada — é origem,
+    # e por isso não entra em `ENTIDADES_ATIVAS` nem no corpus.
+    #
+    # Precisa de sigla mesmo assim: sem ela, adicionar um termo e pedir o
+    # texto pseudonimizado levantava `PseudonimoImpossivel` e a rota devolvia
+    # 500 (achado em 2026-09-16, ao ligar o operador no PDF). Apontar o que
+    # faltou é a ação central da revisão; não podia derrubar o entregável.
+    #
+    # "TRECHO" e não um tipo qualquer porque aqui **não se sabe** o tipo: o
+    # usuário apontou um pedaço de texto, não declarou uma classe. Inventar
+    # `[P-...]` afirmaria a quem lê que ali havia uma pessoa, sem base.
+    "MANUAL": "TRECHO",
 }
 
 # --------------------------------------------------------------------------

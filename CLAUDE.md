@@ -47,18 +47,28 @@ já produziu, ou produziria, um dos três modos de falha acima.
    tipo de objeto PDF — nunca o texto. Um log é uma cópia do dado fora do
    arquivo saneado, com retenção própria e sem verificação.
 5. **Operador declarado ≠ operador implementado.** `validar_perfil` recusa
-   `pseudonimo` e `mascara` (`OPERADORES_IMPLEMENTADOS`). Não relaxar essa
-   trava sem o executor correspondente existir e ser testado.
+   `mascara` (`OPERADORES_IMPLEMENTADOS`). Não relaxar essa trava sem o
+   executor correspondente existir e ser testado.
 
-   Continua valendo **apesar de** `pseudonimo.py` existir: o token é escrito
-   no artefato de *texto*, não dentro do PDF. Liberar o operador agora deixaria
-   um perfil pedir pseudônimo e receber um PDF tarjado, sem aviso — que é
-   exatamente o buraco que esta invariante existe para tapar. A trava sai
-   quando A3–A8 (`goal-fase-2.md`) entregarem o escritor de token no PDF.
+   `pseudonimo` saiu da recusa em **2026-09-16**, e saiu porque o executor
+   passou a existir — não porque incomodava. Os três que a trava exigia:
+   `pdf_redactor.redact_document(tokens=...)` escreve o token no PDF; mede a
+   largura antes e **reprova o documento** em vez de deformar; e `verify`
+   confere a presença do token além da ausência do valor. Sem os três, um
+   perfil pediria pseudônimo e receberia um PDF tarjado, sem aviso.
 
-   Corolário: **substituição por token é propriedade da saída, não operador de
-   política.** Os spans são os mesmos e a política é a mesma; muda só o que
-   preenche o buraco em cada artefato.
+   **Corolário revisado na mesma data.** A versão anterior dizia que
+   substituição por token era propriedade da saída, e **não** operador de
+   política — verdade enquanto o token só existia no artefato de texto. Agora
+   é operador de política, por entidade, e isso é o que torna possível o **modo
+   misto**, que não é refinamento e sim o caminho principal: valor curto não
+   comporta token (`[CEP-2C81]` ocupa 48,0pt, um CEP deixa 43,0pt), então um
+   documento comum precisa de token onde cabe e tarja onde não cabe.
+
+   O que sobrevive do corolário antigo: os dois artefatos do mesmo documento
+   usam o **alocador da sessão**, então o mesmo valor recebe o mesmo token no
+   PDF e no texto. Alocador por chamada faria os dois entregáveis discordarem
+   sobre quem é quem.
 6. **O perímetro de rede é a promessa central do produto.** Serviços de lote
    rodam em `network_mode: none`; o `ui` vive em rede `internal: true` e
    **nunca** ganha egress. Não adicionar dependência que precise de rede em
@@ -111,9 +121,9 @@ errada é a principal forma de introduzir bug aqui.
 | Orquestração | `pipeline.py` | ordem das camadas, resolução | HTTP, disco |
 | Lógica pura de span | `spans.py` | precedência, desambiguação, filtro | Presidio, torch |
 | Geometria | `layout.py` | offset ↔ retângulo | decisão sobre o que tarjar |
-| Redação | `pdf_redactor.py` | remover e sanear | decisão sobre o que tarjar |
+| Redação | `pdf_redactor.py` | remover, escrever token e sanear | decisão sobre o que tarjar |
 | Pseudônimo | `pseudonimo.py` | token e substituição em texto | PDF, disco, política |
-| Verificação | `verifier.py` | 10 vetores no PDF, 2 no texto | qualquer confiança no redator |
+| Verificação | `verifier.py` | 10 vetores no PDF (11 com token), 2 no texto | qualquer confiança no redator |
 | Política | `politica.py` | operador por entidade, validação | execução |
 | Estado + travas | `web/sessao.py` | **todas** as regras da UI | transporte |
 | Transporte | `web/app.py` | HTTP, códigos de status | regra de decisão |
@@ -292,7 +302,7 @@ anonimizador-poc/
   docs/01..07                      inventário, requisitos, configuração,
                                    implantação, política de LLM, resultados F0,
                                    modelo de produto (planos PF e empresa)
-  tests/                           296 testes (+9 marcados slow)
+  tests/                           334 testes (+9 marcados slow)
 ```
 
 `docs/02-requisitos.md` tem a tabela de requisitos normativos (RN-01..RN-07) e

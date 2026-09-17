@@ -330,24 +330,89 @@ escolha — não escondida numa configuração.
 - [x] **A2. Operador `pseudonimo` sem cofre.** Mapa valor → token em memória,
       descartado ao fim do documento. Determinismo **intradocumento**. Sem
       chave, sem custódia, sem retenção.
-- [ ] **A3. Formato curto e tipado.** `[P-7F3A]`, `[CPF-2C81]`. O tipo precisa
+- [x] **A3. Formato curto e tipado.** `[P-7F3A]`, `[CPF-2C81]`. O tipo precisa
       sobreviver ao token: quem lê o documento tem de saber que ali havia uma
       pessoa, não um CNPJ.
-- [ ] **A4. Medir a largura antes de escrever.** Não coube na caixa →
+
+      **Entregue junto com o A2**, em `config.SIGLAS_TOKEN`. Ganhou uma sigla
+      a mais em 2026-09-16: `MANUAL` -> `TRECHO`. Sem ela, apontar um termo à
+      mão e pedir o texto pseudonimizado devolvia **500** — `MANUAL` não é
+      entidade detectada, é origem, e ninguém tinha percebido que ela também
+      passa pelo alocador. `TRECHO` e não um tipo qualquer porque ali de fato
+      não se sabe o tipo: inventar `[P-...]` afirmaria a quem lê que havia uma
+      pessoa, sem base.
+- [x] **A4. Medir a largura antes de escrever.** Não coube na caixa →
       **falhar o documento**, alto e claro. Nunca entregar deformado, nunca
       entregar com token descartado. Cobre as arestas 1 e 2 da seção 0.
-- [ ] **A5. `verifier` adaptado.** Hoje ele confere que o valor sumiu; passa a
+
+      **Medido em 2026-09-16, e a medição mudou o desenho duas vezes.**
+
+      Primeiro: `add_redact_annot(text=...)` não recusa texto largo demais —
+      **encolhe a fonte em silêncio**. Um token de 48,0pt numa caixa de
+      43,0pt saiu escrito a 7,0pt no meio de uma linha de 9,0pt. Arquivo
+      pronto, legível e errado.
+
+      Segundo, e pior: ele **ignora o corpo pedido mesmo quando sobra
+      espaço**. Pedindo 7 / 8 / 9 / 10 / 12pt numa caixa de 103,5pt onde o
+      token ocupa 35,5pt, saíram 6,0 / 6,5 / 6,5 / 7,0 / 7,0pt. Não há
+      parâmetro que desligue.
+
+      Por isso a redação **remove** e o token é desenhado depois com
+      `insert_text`, que respeita o corpo (9,002 pedido -> 9,002 escrito, no
+      mesmo `x0`). Duas constantes saíram da medição, ambas estáveis em 7, 9,
+      11 e 14pt: `corpo = altura_da_caixa x 0,728` e
+      `linha_de_base = y1 - 0,299 x corpo`.
+
+      **A consequência de produto, e ela precisa de decisão:** valor curto não
+      comporta token. `[CEP-2C81]` ocupa 48,0pt e um CEP deixa 43,0pt;
+      `[DATA-9E44]` ocupa 53,0pt e `12/03/2026` deixa 45,0pt. Um documento
+      comum tem CEP e data, então "tudo em token" reprova o documento
+      inteiro. O caminho entregue é o **modo misto** — token onde cabe, tarja
+      onde não cabe —, com a tela avisando antes de aprovar. Alternativas não
+      exploradas: sufixo mais curto para tipos curtos, sigla mais curta, ou
+      deixar o token avançar sobre o espaço em branco vizinho.
+- [x] **A5. `verifier` adaptado.** Hoje ele confere que o valor sumiu; passa a
       conferir também que **o token está presente**. Sem isso, o descarte
       silencioso da aresta 1 passa pelo gate.
-- [ ] **A6. Interface.** Escolha por documento entre `tarja` e `pseudonimo`,
+
+      `verify(caminho, valores, tokens=...)`, vetor 11. Documento tarjado
+      segue com dez; pseudonimizado tem onze, e o relatório nomeia o que
+      executou. A busca é no **texto extraído**, não nos bytes brutos: o
+      stream sai comprimido e ali o token nunca apareceria — um gate que
+      reprova tudo é tão inútil quanto um que aprova tudo.
+- [x] **A6. Interface.** Escolha por documento entre `tarja` e `pseudonimo`,
       com a diferença dita na tela no momento da escolha — não numa
       configuração escondida.
-- [ ] **A7. Liberar em `politica.py`.** Remover `PSEUDONIMO` da recusa de
+
+      Bloco no topo da lateral, com a consequência de cada opção escrita
+      embaixo dela e a afirmação de irreversibilidade (RN-01) no mesmo lugar.
+      A tela deixa de dizer "10 vetores" e "será tarjado" quando o modo é
+      token, porque as duas frases passariam a ser falsas.
+- [x] **A7. Liberar em `politica.py`.** Remover `PSEUDONIMO` da recusa de
       `validar_perfil` **só** depois de A1 a A5 verdes.
-- [ ] **A8. Fonte embutida sem os glifos do token.** Herdado do Bloco 2
+
+      Feito em 2026-09-16, com A1-A5 verdes. `mascara` continua recusada.
+      Entrou junto `OPERADORES_QUE_REMOVEM`: dois pontos decidiam span ativo
+      comparando `== TARJA`, e com dois operadores isso faria o span cair fora
+      da lista de ativos — o valor ficaria no PDF. Era vazamento silencioso a
+      uma linha de distância.
+- [x] **A8. Fonte embutida sem os glifos do token.** Herdado do Bloco 2
       antigo, e ainda não medido: um PDF com subconjunto de fonte pode não ter
       os caracteres `[`, `-` ou os dígitos do token. Verificar antes de
       escrever; sem glifo, falhar como em A4.
+
+      **Fechado por construção**: o token é desenhado em Helvetica, uma das 14
+      fontes que todo leitor tem, e não na fonte do documento. O subconjunto
+      embutido deixa de importar. A conferência explícita ficou de pé assim
+      mesmo, porque `config.SIGLAS_TOKEN` é editável: sigla fora do WinAnsi
+      levanta `TokenSemGlifo`.
+
+      Medido ao escrever o teste, e contraria a suposição com que a tarefa
+      nasceu: **acento não é o problema** — WinAnsi cobre o latim acentuado, e
+      `[ÓRG-1A2B]` desenha sem susto. O que cai são grego, cirílico e afins.
+
+      Custo aceito: o token sai em Helvetica mesmo num documento composto em
+      outra fonte.
 - [x] **A9. Saída de texto pseudonimizado, ao lado do PDF.** Aberto pela
       medição do A1, e provavelmente o entregável mais importante para o caso
       de uso declarado: o documento é pseudonimizado **para ser analisado por

@@ -239,8 +239,23 @@ def verify_texto(
     )
 
 
-def verify(caminho: str | Path, valores: Iterable[str]) -> VerificationReport:
-    """Confere que nenhum dos ``valores`` sobrevive no PDF final."""
+def verify(
+    caminho: str | Path,
+    valores: Iterable[str],
+    tokens: Iterable[str] = (),
+) -> VerificationReport:
+    """Confere que nenhum dos ``valores`` sobrevive no PDF final.
+
+    Com ``tokens``, confere também que **cada token está presente** — o A5 do
+    `goal-fase-2.md`, e a mesma razão que já valia no `verify_texto`: se o
+    valor sai e o token não entra, a checagem de ausência diz "limpo", porque
+    o original de fato sumiu. O gate aprovaria um documento mutilado, com o
+    usuário achando que aprovou um pseudonimizado.
+
+    O vetor só entra na lista quando há token a conferir, e o relatório nomeia
+    o que executou. Documento tarjado continua com dez vetores; documento
+    pseudonimizado tem onze.
+    """
     caminho = str(caminho)
     agulhas = {
         v: _variantes(v)
@@ -362,6 +377,28 @@ def verify(caminho: str | Path, valores: Iterable[str]) -> VerificationReport:
     )
     leaks += _procurar(agulhas, brutos, "bytes-brutos")
     vetores.append("bytes-brutos")
+
+    # 11. presença do token (só quando há pseudônimo em jogo)
+    #
+    # Procura no texto extraído, **não** nos bytes brutos: o content stream
+    # sai comprimido (`deflate=True` no `save`), então o token não aparece
+    # literal no arquivo, e conferir ali daria "ausente" para todo token —
+    # um gate que reprova tudo é tão inútil quanto um que aprova tudo.
+    #
+    # Basta o texto da página. O A1 mediu que metade dos modos de extração lê
+    # o token fora de posição, mas "fora de posição" ainda é "presente", e
+    # presença é tudo o que este vetor afirma. A ordem de leitura é problema
+    # do artefato de texto, que existe justamente porque o PDF não a garante.
+    esperados = sorted({t for t in tokens if t})
+    if esperados:
+        for token in esperados:
+            if token not in texto:
+                # O token é sorteado e não deriva do valor: exibi-lo não expõe
+                # dado pessoal, e é o que torna o defeito diagnosticável.
+                leaks.append(
+                    Leak("token-ausente", token, "substituicao perdida no PDF")
+                )
+        vetores.append("tokens-presentes")
 
     # Um mesmo valor pode aparecer em vários vetores; mantemos todos, é
     # informação de diagnóstico.

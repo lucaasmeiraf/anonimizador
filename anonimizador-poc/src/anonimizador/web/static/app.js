@@ -348,9 +348,12 @@ function redesenhar() {
         s.nota === "checksum_invalido"
           ? " · forma válida, dígito verificador inválido — confira"
           : "";
-      caixa.title =
-        `${s.entity} · ${s.sera_tarjado ? "será tarjado" : "NÃO será tarjado"}` +
-        porque;
+      const destino = !s.sera_tarjado
+        ? "NÃO será alterado"
+        : s.operador === "pseudonimo"
+          ? "vira código"
+          : "será tarjado";
+      caixa.title = `${s.entity} · ${destino}` + porque;
       caixa.dataset.spanId = s.id;
       /* Clique na tarja: o que ele significa depende de quem a criou.
        *
@@ -376,6 +379,7 @@ function redesenhar() {
   montarInventario();
   montarListaManuais();
   atualizarBotaoAprovar();
+  sincronizarModo();
 }
 
 /* Lista dos trechos que o usuário adicionou, com desligar e apagar.
@@ -508,8 +512,39 @@ async function alternar(spanId, ativo, redesenhaDepois = true) {
   if (redesenhaDepois) redesenhar();
 }
 
+/* O modo do documento é lido do perfil, nunca guardado aqui.
+ *
+ * Estado paralelo no front-end é como a tela passa a dizer uma coisa e o PDF
+ * a fazer outra — e a regra do projeto é que nada que o navegador guarda
+ * influencia o arquivo. O servidor é a verdade; isto só a lê. */
+function modoAtual() {
+  return doc && doc.perfil && doc.perfil.padrao === "pseudonimo"
+    ? "pseudonimo"
+    : "tarja";
+}
+
+async function trocarModo(modo) {
+  // Toda entidade que já sai do documento passa a sair pelo novo operador; o
+  // que estava em `manter` continua em `manter`. Trocar o modo não é redecidir
+  // o que é sensível — é decidir o que fica no lugar.
+  const regras = {};
+  for (const [entidade, op] of Object.entries(doc.perfil.regras || {})) {
+    regras[entidade] = op === "manter" ? "manter" : modo;
+  }
+  doc = await enviar("/perfil", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nome: "personalizado", padrao: modo, regras }),
+  });
+  limparResultado();
+  redesenhar();
+}
+
 async function alternarEntidade(entidade, ligar) {
-  const regras = { ...doc.perfil.regras, [entidade]: ligar ? "tarja" : "manter" };
+  const regras = {
+    ...doc.perfil.regras,
+    [entidade]: ligar ? modoAtual() : "manter",
+  };
   doc = await enviar("/perfil", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -521,6 +556,54 @@ async function alternarEntidade(entidade, ligar) {
   });
   limparResultado();
   redesenhar();
+}
+
+for (const radio of document.querySelectorAll('input[name="modo"]')) {
+  radio.addEventListener("change", async () => {
+    if (radio.checked) await trocarModo(radio.value);
+  });
+}
+
+/* Mantém a tela dizendo a verdade sobre o que vai acontecer.
+ *
+ * Os textos mudam com o modo porque descrevem promessas diferentes: "será
+ * tarjado" é falso quando o trecho vira código, e "10 vetores" é falso quando
+ * o verificador roda o décimo primeiro, o de presença do código. */
+function sincronizarModo() {
+  const modo = modoAtual();
+  const token = modo === "pseudonimo";
+
+  for (const radio of document.querySelectorAll('input[name="modo"]')) {
+    radio.checked = radio.value === modo;
+  }
+  // O título fica **neutro** nos dois modos: "tarjado" descrevia bem quando só
+  // havia um operador e passou a descrever metade do produto. A lista é a
+  // mesma lista — o que muda é o que fica no lugar, e isso o bloco de escolha
+  // acima já diz.
+  $("titulo-inventario").textContent = "O que será anonimizado";
+  $("btn-termo").textContent = token ? "Substituir" : "Tarjar";
+  $("ajuda-aprovar").textContent = token
+    ? "O PDF só é gerado agora. Ele passa por verificação em 11 vetores — os " +
+      "10 de sempre, mais a conferência de que todo código foi mesmo escrito."
+    : "O PDF só é gerado agora. Ele passa por verificação em 10 vetores antes " +
+      "de ser liberado.";
+
+  /* Valor curto não comporta código, e o usuário precisa saber ANTES de
+   * aprovar — não ao receber o erro. Medido em 2026-09-16: `[CEP-2C81]` ocupa
+   * 48,0pt e um CEP deixa 43,0pt de espaço. */
+  const curtas = (doc.spans || [])
+    .filter((s) => s.sera_tarjado && s.operador === "pseudonimo")
+    .map((s) => s.entity);
+  const aviso = $("aviso-curtas");
+  if (token && curtas.some((e) => e === "CEP" || e === "DATE_TIME")) {
+    aviso.textContent =
+      "Atenção: CEP e datas são curtos demais para caber um código sem " +
+      "deformar a linha. Deixe essas classes em tarja na lista abaixo, ou o " +
+      "documento será reprovado na hora de gerar o PDF.";
+    aviso.classList.remove("hidden");
+  } else {
+    aviso.classList.add("hidden");
+  }
 }
 
 $("btn-termo").addEventListener("click", () => adicionarTermo());

@@ -38,8 +38,15 @@ import fitz  # PyMuPDF
 from .. import config
 from ..layout import TextMap, build_text_map
 from ..pdf_redactor import redact_document
-from ..politica import MANTER, TARJA, PerfilPolitica, validar_perfil
-from ..pseudonimo import pseudonimizar_texto, tokens_de
+from ..politica import (
+    MANTER,
+    OPERADORES_QUE_REMOVEM,
+    PSEUDONIMO,
+    TARJA,
+    PerfilPolitica,
+    validar_perfil,
+)
+from ..pseudonimo import AlocadorDeToken, pseudonimizar_texto, tokens_de
 from ..spans import Span, resolver_sobreposicoes
 from ..verifier import (
     SEPARADORES_DE_ID,
@@ -124,13 +131,32 @@ class Sessao:
     # enviado, sem resposta recebida. Não é apagada por `_invalidar`: o envio
     # aconteceu, e editar o documento depois não o desfaz.
     envios: list[dict] = field(default_factory=list)
+    # Alocador de token **da sessão**, não de cada artefato.
+    #
+    # Criar um por chamada faria o mesmo nome virar `[P-7F3A]` no PDF e
+    # `[P-2C81]` no texto, para o mesmo documento e a mesma pessoa. Quem
+    # recebesse os dois arquivos não teria como saber que falam do mesmo ator
+    # — que é exatamente a propriedade pela qual o token existe. Um alocador
+    # por sessão dá determinismo entre os dois entregáveis.
+    #
+    # Continua sendo intradocumento: a sessão é um documento, morre com ele, e
+    # nada é gravado em disco. A proibição da seção 0 do `goal-fase-2.md` é
+    # reaproveitar entre documentos, e isso segue valendo.
+    _alocador: AlocadorDeToken | None = field(default=None, repr=False)
 
     # -- política ---------------------------------------------------------
     def operador_de(self, entidade: str) -> str:
         if entidade == MANUAL:
-            # O usuário apontou explicitamente. A política de entidades não
+            # O usuário apontou explicitamente, e a política de entidades não
             # tem jurisdição sobre isso — ela descreve classes detectadas.
-            return TARJA
+            #
+            # O que ela não decide é **se** o trecho sai; o **como** segue o
+            # padrão do documento. Sem isso, num documento em modo token o
+            # trecho apontado à mão viraria barra preta enquanto todo o resto
+            # vira token — e o PDF discordaria do texto pseudonimizado, que
+            # tokeniza tudo o que está ativo.
+            padrao = self.perfil.padrao
+            return padrao if padrao in OPERADORES_QUE_REMOVEM else TARJA
         return self.perfil.operador_de(entidade)
 
     def sera_tarjado(self, s: SpanUI) -> bool:
@@ -143,11 +169,68 @@ class Sessao:
         """
         if s.ativo is not None:
             return s.ativo
-        return self.operador_de(s.entity) == TARJA
+        # `OPERADORES_QUE_REMOVEM`, e nao `== TARJA`: com `pseudonimo`
+        # liberado, comparar com um operador so faria o span cair fora da
+        # lista de ativos — e o valor ficaria no PDF. O nome do metodo e
+        # anterior ao segundo operador; o que ele responde e "este trecho sai
+        # do documento?", verdade para os dois.
+        return self.operador_de(s.entity) in OPERADORES_QUE_REMOVEM
 
     def spans_ativos(self) -> list[SpanUI]:
-        """Os spans que de fato serão tarjados."""
+        """Os spans cujo valor sai do documento — por tarja ou por token."""
         return [s for s in self.spans.values() if self.sera_tarjado(s)]
+
+    def operador_do_span(self, s: SpanUI) -> str:
+        """Qual operador se aplica a **este** trecho, não à classe dele.
+
+        A diferença aparece quando o usuário liga à mão um trecho de uma classe
+        que está em ``manter``: a política decidiu "não mexer" e foi vencida
+        pela decisão explícita. Ela decidiu o *se*, e perdeu; o *como* não é
+        dela, e segue o padrão do documento.
+
+        Sem isto, num documento em modo token esse trecho viraria barra preta
+        no meio de um texto de códigos — e o PDF discordaria do texto
+        pseudonimizado, que tokeniza tudo o que está ativo.
+        """
+        op = self.operador_de(s.entity)
+        if op in OPERADORES_QUE_REMOVEM:
+            return op
+        padrao = self.perfil.padrao
+        return padrao if padrao in OPERADORES_QUE_REMOVEM else TARJA
+
+    @property
+    def alocador(self) -> AlocadorDeToken:
+        if self._alocador is None:
+            self._alocador = AlocadorDeToken()
+        return self._alocador
+
+    def _tokens_do_pdf(self, ativos: list[SpanUI]) -> tuple[dict, int]:
+        """Token de cada span cujo operador é `pseudonimo`.
+
+        Devolve também quantos ficaram sem token por sobreposição. Spans ativos
+        podem se sobrepor — basta desligar um detectado, marcar um trecho
+        manual dentro dele e religar o detectado. Dois tokens sobrepostos
+        escreveriam um por cima do outro na página, e ``resolver_sobreposicoes``
+        é a peça determinística que o caminho de texto já usa para essa mesma
+        decisão.
+
+        O span que perde a disputa **não fica sem tratamento**: ele continua na
+        lista de ativos e recebe tarja. O valor sai do documento de qualquer
+        forma; o que ele não recebe é o token. A contagem vai para o relatório
+        porque uma substituição a menos que o pedido não pode ser silenciosa.
+        """
+        alvos = [s for s in ativos if self.operador_do_span(s) == PSEUDONIMO]
+        if not alvos:
+            return {}, 0
+
+        disjuntos = resolver_sobreposicoes([s.para_span() for s in alvos])
+        tokens = {
+            (sp.start, sp.end): self.alocador.token_de(
+                sp.entity, self.tm.text[sp.start:sp.end]
+            )
+            for sp in disjuntos
+        }
+        return tokens, len(alvos) - len(disjuntos)
 
     def inventario(self) -> dict[str, int]:
         """Contagem por entidade, **incluindo as que não apareceram**.
@@ -443,15 +526,22 @@ class Sessao:
         """
         ativos = self.spans_ativos()
         saida = self.pasta / "redigido.pdf"
+        tokens, sem_token = self._tokens_do_pdf(ativos)
 
         doc = fitz.open(str(self.original))
         try:
             tm = build_text_map(doc)
-            res = redact_document(doc, tm, [s.para_span() for s in ativos], saida)
+            # `PseudonimoImpossivelNoPDF` sobe daqui sem ser capturada: é
+            # documento reprovado, não erro de programação, e `app.py` a
+            # traduz em 422. Capturá-la para "seguir com tarja" seria entregar
+            # coisa diferente da pedida sem avisar.
+            res = redact_document(
+                doc, tm, [s.para_span() for s in ativos], saida, tokens=tokens
+            )
         finally:
             doc.close()
 
-        rel = verify(saida, res.valores)
+        rel = verify(saida, res.valores, tokens=res.tokens_escritos)
 
         # A dissecação precisa acontecer **antes** de apagar o arquivo: ela
         # reabre o PDF reprovado para descobrir se cada valor ainda aparece no
@@ -462,6 +552,8 @@ class Sessao:
         self.relatorio = {
             "spans_redigidos": res.spans_redigidos,
             "retangulos": res.retangulos,
+            "tokens_escritos": len(res.tokens_escritos),
+            "spans_sem_token_por_sobreposicao": sem_token,
             "spans_sem_retangulo": len(res.spans_sem_retangulo),
             "saneamento": res.saneamento,
             "verificacao_ok": rel.ok,
@@ -526,7 +618,9 @@ class Sessao:
         # `texto`, para não redecidir rótulo que o usuário pode ter editado.
         disjuntos = resolver_sobreposicoes(ativos)
 
-        res = pseudonimizar_texto(self.tm.text, disjuntos)
+        # O alocador da sessão, não um novo: é o que faz o mesmo valor
+        # receber o mesmo token no texto e no PDF.
+        res = pseudonimizar_texto(self.tm.text, disjuntos, self.alocador)
         tokens = tokens_de(res.substituicoes)
 
         saida = self.pasta / "pseudonimizado.txt"
@@ -606,7 +700,7 @@ class Sessao:
             # Só conta o que a política mandava substituir. `ORGANIZATION`
             # nasce em `manter` porque a LAI cobra que o órgão do ato continue
             # legível — encontrá-lo aqui é o sistema funcionando, não falha.
-            if self.operador_de(span.entity) != TARJA:
+            if self.operador_de(span.entity) not in OPERADORES_QUE_REMOVEM:
                 continue
             achados.append(
                 {"entidade": span.entity, "inicio": span.start, "fim": span.end}
@@ -769,6 +863,14 @@ class Sessao:
             "ativo": s.ativo,
             "nota": s.nota,
             "sera_tarjado": self.sera_tarjado(s),
+            # Qual dos dois operadores se aplica a este trecho. A tela precisa
+            # distinguir "vai sumir" de "vira token" — são promessas
+            # diferentes para quem assina embaixo.
+            #
+            # `operador_do_span` e não `operador_de`: para um trecho ligado à
+            # mão numa classe em `manter`, o segundo responderia "manter", que
+            # é justamente o que não vai acontecer com ele.
+            "operador": self.operador_do_span(s),
             "rects": [
                 {
                     "pagina": pno,

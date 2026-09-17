@@ -608,3 +608,47 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .painéis { grid-template-columns: 1fr; }
   .rolagem { max-height: 60vh; }
 }
+
+
+/* ----------------------------------------------- escolha do operador ---
+ *
+ * Duas opcoes lado a lado verticalmente, cada uma com a consequencia escrita
+ * embaixo. A explicacao nao fica atras de um "saiba mais": a diferenca entre
+ * sumir e virar codigo muda o que o documento serve para fazer depois, e o
+ * usuario decide isso uma vez por documento. */
+.modo {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.modo:hover { background: rgba(0, 0, 0, 0.03); }
+.modo:has(input:checked) {
+  border-color: var(--borda, #d5d8de);
+  background: rgba(0, 0, 0, 0.04);
+}
+.modo-titulo { font-size: 13px; font-weight: 600; }
+.modo-ajuda {
+  grid-column: 2;
+  color: var(--suave);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.modo code {
+  font-size: 12px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+}
+.aviso-irreversivel {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--borda, #d5d8de);
+  color: var(--suave);
+  font-size: 12px;
+  line-height: 1.5;
+}

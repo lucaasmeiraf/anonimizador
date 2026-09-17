@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..pipeline import DetectionPipeline
+from ..pdf_redactor import PseudonimoImpossivelNoPDF
 from ..politica import PerfilPolitica, PoliticaInvalida
 from .sessao import Sessao, Sessoes, SpanUI, perfil_padrao
 
@@ -301,7 +302,15 @@ def aplicar_perfil(
 def aprovar(sessao: Sessao = Depends(pegar_sessao)) -> dict:
     if not sessao.spans_ativos():
         raise HTTPException(400, "nenhuma tarja ativa: não há o que anonimizar")
-    sessao.aprovar()
+    try:
+        sessao.aprovar()
+    except PseudonimoImpossivelNoPDF as exc:
+        # 422 e não 500: a requisição está correta e o documento é que não
+        # comporta o que o perfil pede. A mensagem carrega token, entidade e
+        # larguras — nunca o valor —, que é o que permite ao usuário decidir
+        # entre trocar aquelas entidades para tarja ou aceitar o documento
+        # como está.
+        raise HTTPException(422, str(exc)) from exc
     return sessao.to_dict()
 
 

@@ -238,3 +238,44 @@ def test_nenhuma_caixa_de_dialogo_do_navegador():
     codigo = re.sub(r"//.*", "", codigo)
     for proibida in ("confirm(", "alert(", "prompt("):
         assert proibida not in codigo, f"{proibida} voltou ao codigo"
+
+
+# --------------------------------------------------------------------------
+# A6 / RN-01 — a tela diz a verdade no momento da escolha
+# --------------------------------------------------------------------------
+def test_a_escolha_entre_os_dois_operadores_esta_na_tela():
+    """Não pode ser configuração escondida — é o A6 do `goal-fase-2.md`.
+
+    A escolha muda o que o documento serve para fazer depois: tarja para
+    publicar, código para mandar a uma análise. Um seletor atrás de "avançado"
+    faria a maioria nunca descobrir a metade do produto.
+    """
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    assert 'name="modo"' in html
+    assert 'value="tarja"' in html and 'value="pseudonimo"' in html
+
+
+def test_a_tela_afirma_a_irreversibilidade_no_momento_da_escolha():
+    """RN-01, e é a afirmação jurídica mais sensível da interface.
+
+    Enquanto não há cofre, a saída é irreversível **inclusive para nós** — o
+    código é sorteado, não derivado do valor. É o que sustenta dizer que o
+    arquivo de saída não é dado pessoal.
+
+    No dia em que a Fase B ligar o cofre, esta frase deixa de ser verdadeira
+    para o arquivo com cofre, e a tela terá de dizer o contrário **no mesmo
+    lugar**. Este teste existe para que a frase não seja apagada nem alterada
+    sem que alguém repare no que está mexendo.
+    """
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    bloco = html[html.index('id="bloco-modo"') : html.index('id="titulo-inventario"')]
+    assert "removido do arquivo" in bloco
+    assert "nem nós conseguimos voltar atrás" in bloco
+    assert "não há mapa guardado" in bloco or "não existe chave" in bloco
+
+
+def test_o_texto_dos_vetores_acompanha_o_modo():
+    """"10 vetores" vira mentira quando o verificador roda o décimo primeiro."""
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert "11 vetores" in js and "10 vetores" in js
+    assert "sincronizarModo" in js

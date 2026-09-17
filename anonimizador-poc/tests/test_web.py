@@ -340,15 +340,21 @@ def test_trocar_perfil_apos_aprovar_invalida_download(cliente, pdf):
 # --------------------------------------------------------------------------
 # Invariante 3 — operador não implementado é recusado
 # --------------------------------------------------------------------------
-@pytest.mark.parametrize("operador", ["pseudonimo", "mascara"])
-def test_perfil_recusa_operador_nao_implementado(cliente, pdf, operador):
+def test_perfil_recusa_operador_nao_implementado(cliente, pdf):
+    """`mascara` continua recusada: não há executor que preserve o formato.
+
+    `pseudonimo` saiu desta lista em 2026-09-16, quando o escritor de token no
+    PDF passou a existir. `mascara` não saiu — e é ela que mantém a invariante
+    5 do `CLAUDE.md` com dentes: operador declarado sem executor é recusado,
+    em vez de aceito e ignorado.
+    """
     doc = _enviar(cliente, pdf)
     r = cliente.put(
         f"/api/doc/{doc['doc_id']}/perfil",
-        json={"nome": "x", "padrao": operador, "regras": {}},
+        json={"nome": "x", "padrao": "mascara", "regras": {}},
     )
     assert r.status_code == 422
-    assert operador in r.json()["detail"]
+    assert "mascara" in r.json()["detail"]
 
 
 def test_perfil_recusa_entidade_desconhecida(cliente, pdf):

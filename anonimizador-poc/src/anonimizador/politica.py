@@ -35,10 +35,27 @@ MANTER = "manter"              # detecta, reporta, nao altera
 
 OPERADORES = (TARJA, PSEUDONIMO, MASCARA, MANTER)
 
-# Executaveis hoje. `MANTER` entra porque nao-fazer-nada e trivialmente
-# implementavel; `PSEUDONIMO` e `MASCARA` exigem reescrever texto no PDF, o
-# que nao existe na Fase 0.
-OPERADORES_IMPLEMENTADOS = frozenset({TARJA, MANTER})
+# Executaveis hoje. `MASCARA` continua fora: exige reescrever o valor
+# preservando o formato (`529.***.***-25`), o que e outro executor e nao
+# existe.
+#
+# `PSEUDONIMO` entrou em 2026-09-16, com A3 a A8 do goal-fase-2 fechados: o
+# escritor de token no PDF existe (`pdf_redactor.redact_document(tokens=...)`),
+# mede a largura antes de escrever, reprova o documento em vez de deformar, e
+# o `verify` confere a presenca do token alem da ausencia do valor. Enquanto
+# esses tres nao existiam, liberar o operador deixaria um perfil pedir
+# pseudonimo e receber tarja sem aviso — que e o buraco que esta trava existe
+# para tapar.
+OPERADORES_IMPLEMENTADOS = frozenset({TARJA, PSEUDONIMO, MANTER})
+
+# Operadores que fazem o valor original **sair** do documento.
+#
+# Os dois removem; a diferenca e o que fica no lugar — nada, ou um token. Todo
+# lugar que precisa saber "este trecho vai embora?" pergunta por esta lista, e
+# nao compara com `TARJA`. A comparacao direta era correta enquanto havia um
+# operador so, e vira vazamento silencioso no instante em que ha dois: o span
+# cairia fora da lista de ativos e o valor ficaria no PDF.
+OPERADORES_QUE_REMOVEM = frozenset({TARJA, PSEUDONIMO})
 
 
 class PoliticaInvalida(ValueError):

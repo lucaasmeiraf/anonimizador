@@ -106,8 +106,38 @@
   </div>
 
   <aside id="lateral">
+    <!-- A6 do goal-fase-2: a escolha entre os dois operadores, com a
+         diferenca dita AQUI, no momento de escolher, e nao numa configuracao
+         escondida. A linha sobre irreversibilidade e requisito RN-01. -->
+    <div class="bloco" id="bloco-modo">
+      <h3>O que fica no lugar do dado</h3>
+      <label class="modo">
+        <input type="radio" name="modo" value="tarja" checked>
+        <span class="modo-titulo">Tarja preta</span>
+        <span class="modo-ajuda">
+          O valor some e o espaço fica coberto. Quem lê o documento não sabe
+          que havia alguém ali, nem se é a mesma pessoa de outro trecho.
+        </span>
+      </label>
+      <label class="modo">
+        <input type="radio" name="modo" value="pseudonimo">
+        <span class="modo-titulo">Código no lugar <code>[P-7F3A]</code></span>
+        <span class="modo-ajuda">
+          O valor some e um código ocupa o lugar. Quem lê sabe que havia uma
+          pessoa — e que é a mesma pessoa dos outros trechos. É o formato para
+          mandar o documento a uma análise automatizada.
+        </span>
+      </label>
+      <p class="aviso-irreversivel">
+        Nos dois casos o valor é <strong>removido do arquivo</strong>. O código
+        é sorteado, não calculado a partir do dado: não existe chave, não há
+        mapa guardado, e <strong>nem nós conseguimos voltar atrás</strong>.
+      </p>
+      <p class="aviso hidden" id="aviso-curtas"></p>
+    </div>
+
     <div class="bloco">
-      <h3>O que será tarjado</h3>
+      <h3 id="titulo-inventario">O que será anonimizado</h3>
       <ul id="inventario"></ul>
     </div>
 
@@ -130,7 +160,7 @@
 
     <div class="bloco" id="bloco-aprovar">
       <button id="btn-aprovar" class="primario">Aprovar e gerar PDF</button>
-      <p class="ajuda">
+      <p class="ajuda" id="ajuda-aprovar">
         O PDF só é gerado agora. Ele passa por verificação em 10 vetores antes
         de ser liberado.
       </p>
