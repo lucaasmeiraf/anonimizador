@@ -279,3 +279,29 @@ def test_o_texto_dos_vetores_acompanha_o_modo():
     js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
     assert "11 vetores" in js and "10 vetores" in js
     assert "sincronizarModo" in js
+
+
+def test_trecho_manual_desligado_perde_o_preenchimento():
+    """Desligado tem de **parecer** desligado, inclusive o apontado à mão.
+
+    Regressão real, relatada em 2026-09-17: o usuário desmarcava os trechos
+    manuais, o servidor desligava, e o retângulo continuava preenchido — só
+    ganhava a borda tracejada. A tela afirmava "ligado" para algo que ele
+    acabara de mandar desligar.
+
+    A causa era especificidade: `.tarja.desligada` e `.tarja.manual` empatam, e
+    `.manual` vencia por vir depois no arquivo. Por isso a asserção aqui é
+    sobre a regra de **três** classes — resolver por ordem funcionaria e
+    quebraria de novo na próxima edição do arquivo.
+
+    Isto não testa aparência: testa que o estado desligado é distinguível do
+    ligado. Sem essa distinção o revisor aprova achando que tarjou algo que
+    não vai ser tarjado, ou o contrário.
+    """
+    css = (ESTATICOS / "estilo.css").read_text(encoding="utf-8")
+    regra = re.search(r"\.tarja\.manual\.desligada\s*\{[^}]*\}", css)
+    assert regra, (
+        "regra .tarja.manual.desligada sumiu — sem ela `.tarja.manual` volta a "
+        "vencer por especificidade e o trecho desligado continua preenchido"
+    )
+    assert "background" in regra.group(0) and "transparent" in regra.group(0)

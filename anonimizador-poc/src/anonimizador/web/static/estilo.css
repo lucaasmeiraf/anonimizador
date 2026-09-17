@@ -252,6 +252,18 @@ header {
 .tarja.desligada { background: transparent; border: 1.5px dashed #b03a35; }
 .tarja.manual { background: #123a6b; }
 
+/* Tres classes, e nao duas, de proposito.
+   `.tarja.desligada` e `.tarja.manual` tem a MESMA especificidade, entao
+   `.manual` vencia por vir depois: o trecho apontado a mao continuava
+   preenchido depois de desligado, e so ganhava a borda tracejada. A tela
+   dizia "ligado" para algo que o servidor ja tinha desligado — falso silencio
+   na direcao mais confusa possivel, porque o usuario acabara de mandar
+   desligar.
+   Resolver por ordem das regras funcionaria e quebraria de novo no proximo
+   que mexesse aqui. Esta regra tem especificidade maior e nao depende de
+   ordem. */
+.tarja.manual.desligada { background: transparent; }
+
 /* Detectado pela forma, com dígito verificador inválido. A borda âmbar diz
    "olhe para este" sem tirar a tarja: o valor continua coberto, mas o revisor
    sabe que a evidência aqui é mais fraca que um checksum fechado. */
