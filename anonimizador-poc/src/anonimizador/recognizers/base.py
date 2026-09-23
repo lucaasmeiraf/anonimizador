@@ -92,6 +92,13 @@ SCORE_ANCORA_SEM_CHECKSUM = 0.45
 # ficha, que é o que produziria âncora cruzada entre entidades vizinhas.
 JANELA_ANCORA = 40
 
+# Score de quem tem checksum válido, forma ambígua e **nenhuma** âncora.
+# Abaixo de SCORE_THRESHOLD (0.35) de propósito: o candidato continua existindo
+# e some no filtro do pipeline, em vez de ser descartado aqui. A diferença
+# aparece para quem baixar o limiar por configuração — a evidência não foi
+# jogada fora, foi classificada como fraca.
+SCORE_AMBIGUO_SEM_ANCORA = 0.20
+
 
 def _normalizar(texto: str) -> str:
     """Minúsculas e sem acento, para comparar âncora sem depender da grafia."""
@@ -110,8 +117,14 @@ class ChecksumRecognizer(PatternRecognizer):
         validator: Optional[Callable[[str], bool]] = None,
         supported_language: str = "pt",
         name: Optional[str] = None,
+        forma_ambigua: bool = False,
     ) -> None:
         self._validator = validator
+        # `forma_ambigua`: o padrão não se distingue de outro identificador
+        # comum pela forma, então checksum válido **sozinho** não basta. Ver o
+        # bloco de decisão em `analyze`, com a medição que o motiva. Só CNH e
+        # PIS marcam isto hoje — os dois são 11 dígitos crus, como o CPF.
+        self._forma_ambigua = forma_ambigua
         super().__init__(
             supported_entity=supported_entity,
             patterns=list(patterns),
@@ -143,7 +156,24 @@ class ChecksumRecognizer(PatternRecognizer):
             trecho = text[r.start:r.end]
 
             if self._validator(trecho):
-                saida.append(r)  # score já vem 1.0 do validate_result
+                # Checksum fecha: evidência forte, score 1.0 vindo do
+                # `validate_result`. É a invariante 8 do `CLAUDE.md`.
+                #
+                # **Menos para quem tem forma ambígua.** CNH e PIS são 11
+                # dígitos crus, iguaizinhos a um CPF, e o dígito verificador
+                # deles fecha por acaso com frequência que foi medida em
+                # 2026-09-17: 9,22% dos CPFs válidos passam também no checksum
+                # de CNH, e 10,74% no de PIS. Numa sequência numérica qualquer
+                # de 11 dígitos, 0,92% passa em CNH.
+                #
+                # Sem âncora, então, "checksum fechou" não distingue um
+                # documento de identificação de um número de protocolo no
+                # rodapé — e tarjar toda numeração é a outra falha jurídica,
+                # a da LAI (`CLAUDE.md` §6). O módulo `cnh.py` sempre disse
+                # isso; era a regra uniforme daqui que o atropelava.
+                if self._forma_ambigua and not self._tem_ancora(text, r.start):
+                    r.score = min(r.score, SCORE_AMBIGUO_SEM_ANCORA)
+                saida.append(r)
                 continue
 
             # Checksum falhou. Só sobrevive com outra evidência.

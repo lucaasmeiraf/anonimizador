@@ -26,4 +26,6 @@ CONTEXT = [
 
 
 def build() -> ChecksumRecognizer:
-    return ChecksumRecognizer("CNH", PATTERNS, CONTEXT, validate_cnh)
+    return ChecksumRecognizer(
+        "CNH", PATTERNS, CONTEXT, validate_cnh, forma_ambigua=True
+    )

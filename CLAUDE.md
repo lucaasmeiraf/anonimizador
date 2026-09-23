@@ -97,6 +97,19 @@ já produziu, ou produziria, um dos três modos de falha acima.
 8. **Evidência de checksum vence evidência estatística** (`config.PRECEDENCIA`)
    e a origem da decisão fica marcada em `recognition_metadata["checksum"]`.
    Score não separa certeza de palpite; a marca separa.
+
+   **O que ela não resolve, e não deve ser lida como se resolvesse:** conflito
+   de checksum contra checksum. CNH e PIS são 11 dígitos crus, iguais a um CPF,
+   e o dígito verificador deles fecha por acaso com frequência medida em
+   2026-09-17 — 9,22% dos CPFs válidos passam também em CNH, 10,74% em PIS.
+   Aí "o checksum fechou" não diz *qual* identificador é aquele, e quem vence
+   por score decide o rótulo por acaso. O efeito era visível: um CPF de DV
+   inválido aparecia ao revisor como `PIS_PASEP`.
+
+   Por isso `ChecksumRecognizer` aceita `forma_ambigua=True`, e aí o checksum
+   **sozinho** não basta — precisa de âncora. Isso não afrouxa a invariante:
+   estatística continua sem vencer checksum. Só reconhece que entre dois
+   checksums válidos a desempatadora é o contexto, não o score.
 9. **O original em claro só existe durante a revisão.** TTL, `DELETE`
    explícito, varredura de órfãs na subida. Não persistir documento fora da
    pasta da sessão.

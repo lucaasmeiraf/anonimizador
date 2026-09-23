@@ -28,10 +28,35 @@ def test_cpf_valido_com_ancora(pipe):
     assert ("CPF", "529.982.247-25") in _entidades(pipe, texto)
 
 
-def test_cpf_com_dv_errado_e_descartado(pipe):
+def test_cpf_com_dv_errado_continua_sendo_cpf(pipe):
+    """DV errado não muda o **rótulo**, muda a força da evidência.
+
+    Este teste exigia o contrário — que o trecho fosse descartado — e passava
+    por um motivo que não era o dele. Descoberto em 2026-09-17, ao exigir
+    âncora para as entidades de forma ambígua:
+
+    `52998224726` fecha o checksum de **PIS**. Então o PIS disparava com score
+    1.0, vencia a sobreposição contra o CPF de checksum inválido, e o span
+    sumia da lista de CPFs — o teste ficava verde. Só que o trecho não estava
+    descartado: estava na tela **rotulado como PIS_PASEP**, numa frase que diz
+    literalmente "CPF nº".
+
+    Rótulo errado é o terceiro modo de falha da tabela do `CLAUDE.md` §1 com
+    outra roupa: o revisor lê a razão errada para a tarja e não tem como
+    desconfiar. Pior que não detectar, porque parece certo.
+
+    O que se exige agora é o comportamento decidido em `8701910`: o trecho
+    aparece, **como CPF**, com a marca de checksum inválido que a tela
+    transforma em borda âmbar.
+    """
     texto = "Consta no CPF nº 529.982.247-26 do requerente."
-    achados = {s.text_of(texto) for s in pipe.analyze(texto) if s.entity == "CPF"}
-    assert "529.982.247-26" not in achados
+    achados = [s for s in pipe.analyze(texto) if s.text_of(texto) == "529.982.247-26"]
+    assert achados, "o trecho não pode sumir em silêncio"
+    (achado,) = achados
+    assert achado.entity == "CPF", (
+        f"rotulado como {achado.entity} — a forma ambígua venceu a âncora"
+    )
+    assert achado.nota == "checksum_invalido"
 
 
 def test_cnpj(pipe):
@@ -46,9 +71,31 @@ def test_email_e_telefone(pipe):
     assert ("TELEFONE", "(11) 98765-4321") in ents
 
 
-def test_ddd_invalido_derruba_telefone(pipe):
+def test_ddd_invalido_vira_suspeita_e_nao_sumico(pipe):
+    """DDD inválido derruba a *certeza*, não o candidato.
+
+    Este teste exigia o contrário até 2026-09-17 — que o trecho não fosse
+    detectado — e ficou vermelho, sem ninguém ver, desde `8701910`
+    ("identificador com checksum invalido deixa de ser invisivel"). Como
+    `make test` desmarca os `slow`, a suíte rápida seguiu verde.
+
+    A decisão daquele commit é a que vale, e está registrada na seção 5 do
+    `CLAUDE.md` com a medição que a motivou: sumir com o identificador cujo
+    dígito verificador não fecha escondia do revisor justamente o caso que ele
+    precisa olhar — minuta, modelo e material de treinamento são cheios deles.
+    O trecho sobrevive com score baixo e marcado, e a tela o desenha com borda
+    âmbar em vez de tarja cheia.
+
+    O que este teste trava agora é a distinção: **detectado, mas como palpite,
+    nunca como certeza.** Se alguém devolver o score a 1.0, ou apagar a marca,
+    um palpite volta a parecer evidência fechada.
+    """
     texto = "Número de protocolo (00) 98765-4321 registrado."
-    assert not [s for s in pipe.analyze(texto) if s.entity == "TELEFONE"]
+    achados = [s for s in pipe.analyze(texto) if s.entity == "TELEFONE"]
+    assert achados, "o candidato não pode sumir em silêncio"
+    (achado,) = achados
+    assert achado.score < 1.0, "DDD inválido não pode dar certeza"
+    assert achado.nota == "checksum_invalido"
 
 
 def test_cnh_sem_ancora_nao_dispara(pipe):

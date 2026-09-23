@@ -17,4 +17,6 @@ CONTEXT = [
 
 
 def build() -> ChecksumRecognizer:
-    return ChecksumRecognizer("PIS_PASEP", PATTERNS, CONTEXT, validate_pis)
+    return ChecksumRecognizer(
+        "PIS_PASEP", PATTERNS, CONTEXT, validate_pis, forma_ambigua=True
+    )
