@@ -340,7 +340,10 @@ documentada e medida antes de a seguinte começar.
 | **1** — Interface de revisão | "uma pessoa consegue confiar e assinar embaixo?" | 🔶 quase concluída — falta medir o gate de usabilidade com pessoas reais |
 | **2A** — Código no lugar do nome | "dá para o documento continuar legível sem expor ninguém?" | ✅ concluída — saída de texto, sem chave e sem cofre |
 | **2B** — Reversibilidade sob chave | "dá para desfazer, com controle?" | ⛔ encerrada — guardar o original resolve, sem custo legal |
-| **3** — Perímetro de rede | "vale abrir a rede para análise por IA?" | 🔶 decidida e construída — falta a tela e a retenção no provedor |
+| **3** — Perímetro de rede | "vale abrir a rede para análise por IA?" | 🔶 construída, com tela — falta um envio real verificado, a retenção no provedor e a confirmação jurídica |
+
+O que vem a seguir, em ordem e com o critério de "terminou", está em
+[`PROXIMOS-PASSOS.md`](PROXIMOS-PASSOS.md).
 
 **Antes de qualquer entrega comercial**, duas pendências de licenciamento
 precisam ser resolvidas: a biblioteca de PDF (AGPL ou licença comercial) e o
@@ -364,3 +367,4 @@ Nenhum documento real entra no ambiente de desenvolvimento.
 | Quem decide arquitetura | [`docs/06-resultados-fase-0.md`](anonimizador-poc/docs/06-resultados-fase-0.md) e os `goal-fase-*.md` |
 | **Quem decide o modelo de negócio** | [`docs/07-modelo-de-produto.md`](anonimizador-poc/docs/07-modelo-de-produto.md) — os dois planos, quem hospeda, e o que bloqueia a venda |
 | Quem escreve código | [`CLAUDE.md`](CLAUDE.md) — invariantes e regras de mudança |
+| Quem escolhe o que fazer em seguida | [`PROXIMOS-PASSOS.md`](PROXIMOS-PASSOS.md) — a fila, em ordem |

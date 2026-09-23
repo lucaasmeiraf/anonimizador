@@ -313,12 +313,14 @@ silêncio.
       do envio (única defesa contra identificador indireto: alguém lê), põe o
       aviso entre o texto e o botão, e só destrava o envio com consentimento
       marcado — desmarcado a cada envio. A recusa da re-detecção vira cartão
-      com "substituir todas as ocorrências". O bloco não aparece se o
-      `analise` está fora do ar ou sem chave (`GET /api/analise/saude`).
+      com "substituir todas as ocorrências". Gerar, ler e baixar o texto é
+      local e aparece sempre; só a parte de envio depende do `analise` no ar
+      e com chave (`GET /api/analise/saude`), e sem ele a tela diz o motivo.
       A taxa de nomes escapados no aviso vem de `NOMES_ESCAPADOS_EM_50` em
       `app.js`, por modelo de NER, e **precisa ser remedida** quando o
-      detector mudar. **Não verificado:** o bloco renderizado com chave real
-      e um envio de ponta a ponta — o `.env` desta máquina está sem chave.
+      detector mudar. Vista pelo usuário na tela em 2026-09-23. **Não
+      verificado:** um envio real de ponta a ponta — item 1 de
+      `PROXIMOS-PASSOS.md`.
 - [ ] **Os dois furos de detecção continuam.** `PERSON` escapa em ~1 documento
       a cada 50; identificador indireto por contexto não é detectado de forma
       alguma, e nenhum token o resolve. O gate de pré-envio **não** os cobre:
@@ -366,13 +368,15 @@ imediato de uso.
 - [ ] Chatbox sobre o documento **anonimizado e verificado**.
 - [ ] Medir latência com o transformer de NER disputando a mesma CPU.
 
-**Bloco 3 — Análise externa** *(só se o Bloco 0 aprovar)*
-- [ ] Serviço de egress separado, sem acesso ao original.
-- [ ] Gate pré-envio: re-detecção sobre o texto anonimizado, limiar estrito,
+**Bloco 3 — Análise externa** *(decidido em 2026-09-05; ver §2.9)*
+- [x] Serviço de egress separado, sem acesso ao original.
+- [x] Gate pré-envio: re-detecção sobre o texto anonimizado, limiar estrito,
       recusa se achar qualquer coisa.
-- [ ] Consentimento por documento, com o texto honesto da seção 2.
-- [ ] Retenção zero configurada e **verificada** no OpenRouter.
-- [ ] Registro de envio: o quê, para quem, quando.
+- [x] Consentimento por documento, com o texto honesto da seção 2 — na tela
+      desde 2026-09-23.
+- [ ] Retenção zero configurada e **verificada** no OpenRouter — item 2 de
+      `PROXIMOS-PASSOS.md`.
+- [x] Registro de envio: o quê, para quem, quando.
 
 ---
 
