@@ -212,6 +212,23 @@ def alternar_manuais(
     return resposta
 
 
+class AlternarEntidade(BaseModel):
+    entidade: str
+    ligar: bool
+
+
+@app.patch("/api/doc/{doc_id}/entidade")
+def alternar_entidade(
+    corpo: AlternarEntidade, sessao: Sessao = Depends(pegar_sessao)
+) -> dict:
+    """A caixa da classe no inventário. Ver `Sessao.alternar_entidade`."""
+    try:
+        sessao.alternar_entidade(corpo.entidade, corpo.ligar)
+    except (ValueError, PoliticaInvalida) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return sessao.to_dict()
+
+
 @app.delete("/api/doc/{doc_id}/manuais")
 def remover_manuais(sessao: Sessao = Depends(pegar_sessao)) -> dict:
     n = sessao.remover_manuais()
@@ -491,6 +508,29 @@ def raiz() -> HTMLResponse:
 @app.get("/api/saude")
 def saude() -> dict:
     return {"ok": True, "ner": config.NER_PADRAO, "entidades": len(config.ENTIDADES_ATIVAS)}
+
+
+@app.get("/api/analise/saude")
+def saude_analise() -> dict:
+    """Diz à tela se o envio para análise existe **agora**.
+
+    Com `make ui` o serviço `analise` não sobe, e com ele no ar sem chave toda
+    chamada falha. Nos dois casos a tela não oferece o envio: botão que só
+    existe para devolver erro é operador declarado sem executor, a mesma coisa
+    que a invariante 5 recusa na política.
+
+    A chamada vai para o `analise` pela rede interna, não para fora — este
+    serviço continua sem egress. O timeout é curto porque a resposta decide
+    só se um bloco aparece; esperar 180s por ela travaria a abertura da tela.
+    """
+    try:
+        r = httpx.get(f"{ANALISE_URL}/saude", timeout=3.0)
+        dados = r.json() if r.status_code == 200 else {}
+    except (httpx.HTTPError, ValueError):
+        return {"disponivel": False, "motivo": "serviço de análise fora do ar"}
+    if not dados.get("chave_configurada"):
+        return {"disponivel": False, "motivo": "chave do OpenRouter não configurada"}
+    return {"disponivel": True, "modelo": dados.get("modelo_padrao")}
 
 
 app.mount("/static", StaticFiles(directory=str(ESTATICOS)), name="static")

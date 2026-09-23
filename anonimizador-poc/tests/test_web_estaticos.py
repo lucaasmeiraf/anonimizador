@@ -165,9 +165,14 @@ def test_tamanho_da_fonte_da_camada_de_texto_nao_usa_porcentagem():
             f"fontSize em porcentagem ({a.strip()}): e percentual da fonte do "
             "pai, nao da altura da pagina"
         )
-        assert '"px"' in a or "'px'" in a, (
-            f"fontSize sem unidade px ({a.strip()}): o tamanho precisa vir da "
-            "altura renderizada"
+        # `cqw` também serve, e pelo mesmo motivo que `px`: é relativo à
+        # largura *renderizada* do container (`.camada-tarjas`), não à fonte do
+        # pai. É o que o código na prévia usa — lá a imagem pode não ter
+        # carregado ainda quando a caixa é desenhada, e um `px` calculado
+        # nesse momento sairia zero.
+        assert '"px"' in a or "'px'" in a or "}cqw`" in a, (
+            f"fontSize sem unidade px ou cqw ({a.strip()}): o tamanho precisa "
+            "vir do tamanho renderizado"
         )
 
 
@@ -305,3 +310,73 @@ def test_trecho_manual_desligado_perde_o_preenchimento():
         "vencer por especificidade e o trecho desligado continua preenchido"
     )
     assert "background" in regra.group(0) and "transparent" in regra.group(0)
+
+
+# --------------------------------------------------------------------------
+# Envio a modelo externo — a tela diz o que as travas não provam
+# --------------------------------------------------------------------------
+def _bloco_analise() -> str:
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    return html[html.index('id="bloco-analise"') : html.index('class="bloco limitacoes"')]
+
+
+def test_o_aviso_de_envio_vem_antes_do_botao():
+    """`goal-fase-3.md` §2: o aviso existe no momento da escolha, não depois.
+
+    As três frases travadas aqui são as que o sistema **não** pode deixar de
+    dizer antes de um envio: que a detecção não é completa, que referência
+    indireta não é detectada de forma alguma, e que o envio não tem desfazer.
+    Cada uma delas é uma lacuna medida, não uma ressalva de estilo.
+    """
+    bloco = _bloco_analise()
+    aviso = bloco.index('id="aviso-envio"')
+    assert aviso < bloco.index('id="btn-analisar"')
+    assert "não garante que tudo que era dado pessoal foi" in bloco
+    assert "Referências indiretas" in bloco
+    assert "O envio é irreversível" in bloco
+    assert "não confere" in bloco, "a retenção no provedor não é verificada aqui"
+
+
+def test_a_tela_nunca_chama_o_envio_de_seguro():
+    """A frase que `goal-fase-3.md` §2 proíbe literalmente."""
+    for arquivo in ("index.html", "app.js"):
+        texto = (ESTATICOS / arquivo).read_text(encoding="utf-8").lower()
+        assert "seguro para enviar" not in texto
+        assert "seguro enviar" not in texto
+
+
+def test_envio_exige_consentimento_e_ele_nao_persiste():
+    """Consentimento por envio, não por sessão nem por configuração.
+
+    O botão nasce desabilitado, só destrava com a caixa marcada, e o clique
+    desmarca a caixa antes de enviar — um segundo envio exige decidir de novo.
+    """
+    bloco = _bloco_analise()
+    assert re.search(r'id="btn-analisar"[^>]*\bdisabled\b', bloco)
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    clique = js[js.index('$("btn-analisar").addEventListener') :]
+    clique = clique[: clique.index("fetch(")]
+    assert '$("chk-consentimento").checked = false' in clique
+
+
+def test_recusa_do_pre_envio_mostra_trecho_por_code_point():
+    """Offset do Python é code point; `slice` do JS é UTF-16 (invariante 7).
+
+    Com um emoji antes do achado, `texto.slice(ini, fim)` mostraria o trecho
+    vizinho — e o botão "substituir" tarjaria o texto errado.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    recusa = js[js.index("function mostrarRecusaEnvio") :]
+    assert "Array.from(textoPrevia)" in recusa
+    assert "textoPrevia.slice(" not in recusa
+
+
+def test_resposta_do_modelo_nunca_vai_para_innerhtml():
+    """Texto vindo de fora da máquina é texto, não marcação."""
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    corpo = js[js.index("function mostrarResposta") :]
+    corpo = corpo[: corpo.index("\n}")]
+    # O comentário que explica a regra cita o nome proibido; só o código conta.
+    corpo = re.sub(r"//.*", "", corpo)
+    assert "innerHTML" not in corpo
+    assert "textContent = a.resposta" in corpo

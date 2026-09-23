@@ -308,8 +308,17 @@ silêncio.
       (`openrouter.ai/settings/privacy`), não deste repositório. Provedores
       têm políticas diferentes e alguns treinam com o que recebem. Precisa ser
       fixada e verificada, não presumida.
-- [ ] **Tela.** Hoje o acesso é por API. O aviso do que o sistema sabe e do
-      que não sabe precisa aparecer no momento da escolha.
+- [x] **Tela.** Feita em 2026-09-23, bloco "Perguntar a um modelo de IA
+      externo" na lateral da revisão. Gera o texto, mostra-o **inteiro** antes
+      do envio (única defesa contra identificador indireto: alguém lê), põe o
+      aviso entre o texto e o botão, e só destrava o envio com consentimento
+      marcado — desmarcado a cada envio. A recusa da re-detecção vira cartão
+      com "substituir todas as ocorrências". O bloco não aparece se o
+      `analise` está fora do ar ou sem chave (`GET /api/analise/saude`).
+      A taxa de nomes escapados no aviso vem de `NOMES_ESCAPADOS_EM_50` em
+      `app.js`, por modelo de NER, e **precisa ser remedida** quando o
+      detector mudar. **Não verificado:** o bloco renderizado com chave real
+      e um envio de ponta a ponta — o `.env` desta máquina está sem chave.
 - [ ] **Os dois furos de detecção continuam.** `PERSON` escapa em ~1 documento
       a cada 50; identificador indireto por contexto não é detectado de forma
       alguma, e nenhum token o resolve. O gate de pré-envio **não** os cobre:

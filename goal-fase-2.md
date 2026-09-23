@@ -371,6 +371,18 @@ escolha — não escondida numa configuração.
       onde não cabe —, com a tela avisando antes de aprovar. Alternativas não
       exploradas: sufixo mais curto para tipos curtos, sigla mais curta, ou
       deixar o token avançar sobre o espaço em branco vizinho.
+
+      **Revisto em 2026-09-23, por decisão do usuário: não cabe → tarja
+      naquele trecho, não reprovação do documento.** O modo misto dependia de
+      o usuário pôr as classes curtas em tarja, e a tela nunca ofereceu essa
+      escolha — só ligar/desligar a classe. Na prática, todo documento em modo
+      código reprovava. Agora `Sessao._tokens_do_pdf` mede antes, com
+      `pdf_redactor.medir_token` (a mesma régua do redator), e o trecho que
+      não comporta o token vai em tarja. O que o A4 protegia continua:
+      nada sai encolhido nem sobreposto, e `PseudonimoImpossivelNoPDF` segue
+      como trava no redator. A troca não é silenciosa — `sem_token` por
+      trecho na tela antes de aprovar, e `tarja_por_falta_de_espaco` por
+      entidade no relatório.
 - [x] **A5. `verifier` adaptado.** Hoje ele confere que o valor sumiu; passa a
       conferir também que **o token está presente**. Sem isso, o descarte
       silencioso da aresta 1 passa pelo gate.

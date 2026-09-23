@@ -37,7 +37,7 @@ import fitz  # PyMuPDF
 
 from .. import config
 from ..layout import TextMap, build_text_map
-from ..pdf_redactor import redact_document
+from ..pdf_redactor import medir_token, redact_document
 from ..politica import (
     MANTER,
     OPERADORES_QUE_REMOVEM,
@@ -204,8 +204,25 @@ class Sessao:
             self._alocador = AlocadorDeToken()
         return self._alocador
 
-    def _tokens_do_pdf(self, ativos: list[SpanUI]) -> tuple[dict, int]:
-        """Token de cada span cujo operador é `pseudonimo`.
+    def _tokens_do_pdf(self, ativos: list[SpanUI]) -> tuple[dict, int, dict]:
+        """Token de cada span cujo operador é `pseudonimo` **e em que ele cabe**.
+
+        Devolve ``(tokens, sem_token_por_sobreposicao, sem_espaco)``, este
+        último contando por entidade os trechos que ficaram em tarja porque o
+        token não cabia na caixa do valor.
+
+        **Não cabe → tarja, decidido pelo usuário em 2026-09-23.** Antes o
+        documento inteiro era reprovado (A4 do `goal-fase-2.md`), e a tela não
+        oferecia saída: um documento comum tem CEP e data, e `[CEP-2C81]` ocupa
+        48,0pt onde o CEP deixa 43,0pt. O valor sai do documento do mesmo jeito
+        — o que se perde é só a legibilidade de "quem é quem" naquele trecho.
+
+        O que o A4 protegia continua protegido: nada é escrito encolhido nem
+        por cima do vizinho. E a troca não é silenciosa — a contagem vai para o
+        relatório e para a tela, por entidade, e a pré-visualização desenha
+        tarja exatamente onde o PDF terá tarja. A medida é
+        ``pdf_redactor.medir_token``, a mesma que o redator usa; por isso a
+        exceção dele continua lá como trava e não dispara neste caminho.
 
         Devolve também quantos ficaram sem token por sobreposição. Spans ativos
         podem se sobrepor — basta desligar um detectado, marcar um trecho
@@ -221,16 +238,23 @@ class Sessao:
         """
         alvos = [s for s in ativos if self.operador_do_span(s) == PSEUDONIMO]
         if not alvos:
-            return {}, 0
+            return {}, 0, {}
 
         disjuntos = resolver_sobreposicoes([s.para_span() for s in alvos])
-        tokens = {
-            (sp.start, sp.end): self.alocador.token_de(
-                sp.entity, self.tm.text[sp.start:sp.end]
-            )
-            for sp in disjuntos
-        }
-        return tokens, len(alvos) - len(disjuntos)
+        tokens: dict[tuple[int, int], str] = {}
+        sem_espaco: dict[str, int] = {}
+        for sp in disjuntos:
+            # O token é alocado mesmo quando não vai para o PDF: o texto
+            # pseudonimizado usa o mesmo alocador e vai precisar dele.
+            token = self.alocador.token_de(sp.entity, self.tm.text[sp.start:sp.end])
+            rects = self.tm.rects_for(sp.start, sp.end)
+            # Sem caixa o redator registra `spans_sem_retangulo`; aqui não há
+            # o que medir, e o token segue para ele tratar.
+            if rects and not medir_token(token, rects[0][1])[2]:
+                sem_espaco[sp.entity] = sem_espaco.get(sp.entity, 0) + 1
+                continue
+            tokens[(sp.start, sp.end)] = token
+        return tokens, len(alvos) - len(disjuntos), sem_espaco
 
     def inventario(self) -> dict[str, int]:
         """Contagem por entidade, **incluindo as que não apareceram**.
@@ -494,6 +518,46 @@ class Sessao:
         logger.info("sessao %s: %d spans manuais removidos", self.doc_id, len(ids))
         return len(ids)
 
+    def alternar_entidade(self, entidade: str, ligar: bool) -> None:
+        """A caixa da classe no inventário: liga ou desliga a classe inteira.
+
+        Existe porque ``aplicar_perfil`` só zera as exceções das classes cuja
+        regra **mudou** — e desmarcar uma classe que já está em ``manter`` não
+        muda regra nenhuma. Relatado em 2026-09-23: o revisor ligou à mão um
+        trecho de ``LOCATION`` (classe em ``manter``), desmarcou a caixa, e
+        nada aconteceu — a exceção sobrevivia, o trecho continuava ligado, e a
+        caixa continuava marcada porque conta os trechos ligados.
+
+        Aqui a intenção é explícita e não depende de diferença de regra: a
+        caixa define o padrão da classe e **sempre** zera as exceções dela.
+        Trecho apontado à mão fica de fora — ele não tem classe, e tem a sua
+        própria caixa (``alternar_manuais``).
+        """
+        if entidade not in config.ENTIDADES_ATIVAS:
+            raise ValueError(f"entidade desconhecida: {entidade}")
+
+        atual = self.perfil.operador_de(entidade)
+        if not ligar:
+            op = MANTER
+        elif atual in OPERADORES_QUE_REMOVEM:
+            op = atual
+        else:
+            padrao = self.perfil.padrao
+            op = padrao if padrao in OPERADORES_QUE_REMOVEM else TARJA
+
+        novo = PerfilPolitica.from_dict(
+            {**self.perfil.to_dict(), "nome": "personalizado",
+             "regras": {**self.perfil.regras, entidade: op}}
+        )
+        validar_perfil(novo, config.ENTIDADES_ATIVAS)
+
+        for s in self.spans.values():
+            if s.entity == entidade and s.origem != "usuario":
+                s.ativo = None
+        self.perfil = novo
+        self._invalidar()
+        logger.info("sessao %s: classe %s -> %s", self.doc_id, entidade, op)
+
     def aplicar_perfil(self, perfil: PerfilPolitica) -> None:
         """Aplica a política e **devolve a classe alterada ao padrão dela**.
 
@@ -553,15 +617,17 @@ class Sessao:
         """
         ativos = self.spans_ativos()
         saida = self.pasta / "redigido.pdf"
-        tokens, sem_token = self._tokens_do_pdf(ativos)
+        tokens, sem_token, sem_espaco = self._tokens_do_pdf(ativos)
 
         doc = fitz.open(str(self.original))
         try:
             tm = build_text_map(doc)
-            # `PseudonimoImpossivelNoPDF` sobe daqui sem ser capturada: é
-            # documento reprovado, não erro de programação, e `app.py` a
-            # traduz em 422. Capturá-la para "seguir com tarja" seria entregar
-            # coisa diferente da pedida sem avisar.
+            # Token que não cabe já saiu de `tokens` e vai em tarja, contado em
+            # `sem_espaco` — decidido **antes**, com a mesma medida do redator,
+            # e não capturando a exceção dele. Por isso
+            # `PseudonimoImpossivelNoPDF` continua subindo sem captura: se ela
+            # disparar aqui, as duas medições discordaram, e isso é defeito, não
+            # documento difícil. `app.py` a traduz em 422.
             res = redact_document(
                 doc, tm, [s.para_span() for s in ativos], saida, tokens=tokens
             )
@@ -581,6 +647,9 @@ class Sessao:
             "retangulos": res.retangulos,
             "tokens_escritos": len(res.tokens_escritos),
             "spans_sem_token_por_sobreposicao": sem_token,
+            # Entidade -> trechos que pediam token e saíram em tarja porque o
+            # token não cabia. Entidade e contagem, nunca o valor.
+            "tarja_por_falta_de_espaco": sem_espaco,
             "spans_sem_retangulo": len(res.spans_sem_retangulo),
             "saneamento": res.saneamento,
             "verificacao_ok": rel.ok,
@@ -864,11 +933,14 @@ class Sessao:
 
     # -- serialização para a tela -----------------------------------------
     def to_dict(self) -> dict:
+        # O mesmo plano que `aprovar` vai usar: a pré-visualização mostra
+        # token onde o PDF terá token, e tarja onde ele não cabe.
+        tokens, _, _ = self._tokens_do_pdf(self.spans_ativos())
         return {
             "doc_id": self.doc_id,
             "nome_arquivo": self.nome_arquivo,
             "paginas": self.paginas,
-            "spans": [self.span_dict(s) for s in self.spans.values()],
+            "spans": [self.span_dict(s, tokens) for s in self.spans.values()],
             "inventario": self.inventario(),
             "perfil": self.perfil.to_dict(),
             "entidades_ativas": list(config.ENTIDADES_ATIVAS),
@@ -880,7 +952,13 @@ class Sessao:
             "envios": self.envios,
         }
 
-    def span_dict(self, s: SpanUI) -> dict:
+    def span_dict(self, s: SpanUI, tokens: dict | None = None) -> dict:
+        # Token que este trecho terá **no PDF**. Nulo quando sai em tarja —
+        # por política ou porque o token não cabe. Token não é dado pessoal:
+        # é sorteado, e mostrá-lo é o que deixa o revisor ver antes o que vai
+        # receber.
+        token = (tokens or {}).get((s.start, s.end))
+        pediu_token = self.sera_tarjado(s) and self.operador_do_span(s) == PSEUDONIMO
         return {
             "id": s.id,
             "entity": s.entity,
@@ -898,6 +976,11 @@ class Sessao:
             # mão numa classe em `manter`, o segundo responderia "manter", que
             # é justamente o que não vai acontecer com ele.
             "operador": self.operador_do_span(s),
+            "token": token,
+            # Pediu token e não vai receber. Quase sempre é falta de espaço;
+            # o caso raro é ter perdido a disputa de sobreposição para outro
+            # trecho — nos dois o valor sai, em tarja.
+            "sem_token": bool(pediu_token and token is None),
             "rects": [
                 {
                     "pagina": pno,

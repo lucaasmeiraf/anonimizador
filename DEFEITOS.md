@@ -20,6 +20,26 @@ história completa tem o `git log`, que é onde ela mora.
 
 ## Defeitos fechados
 
+Fechados em 2026-09-23, os três relatados pelo usuário no modo "Código no
+lugar", que nunca tinha sido usado de ponta a ponta pela tela:
+
+- **O NER devolvia a mesma palavra em pedaços.** "Eloah" como `El` + `oa`,
+  uma data como `20` `/` `12`… — 1.393 pares colados de `DATE_TIME` e 386 de
+  `PERSON` no corpus. Em tarja não se via; em código cada pedaço ganhava o
+  seu, e caixas de 2,8pt reprovavam o documento. Ver
+  `TransformersNerRecognizer._colar_fragmentos` e
+  `tests/test_ner_fragmentos.py`.
+- **Desmarcar a classe não desligava o trecho ligado à mão.** A caixa passava
+  por `aplicar_perfil`, que só zera exceções de classe cuja regra mudou — e
+  desmarcar uma classe em `manter` não muda nada. Ver
+  `Sessao.alternar_entidade` e `tests/test_caixa_de_classe.py`.
+- **Modo código reprovava quase todo documento, sem saída na tela.** CEP e
+  data nunca comportam token, e a escolha de tarja por classe que o modo
+  misto pressupunha não existia na interface. Resolvido por decisão do
+  usuário (não cabe → tarja naquele trecho, dito na tela e no relatório);
+  ver A4 no `goal-fase-2.md`. Junto: a prévia passou a desenhar o código em
+  vez de tarja preta.
+
 Fechados em 2026-09-17:
 
 - **D-01, a tarja comia o texto das linhas vizinhas.** Causa: entrelinha mais

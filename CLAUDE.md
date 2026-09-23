@@ -64,6 +64,11 @@ já produziu, ou produziria, um dos três modos de falha acima.
    misto**, que não é refinamento e sim o caminho principal: valor curto não
    comporta token (`[CEP-2C81]` ocupa 48,0pt, um CEP deixa 43,0pt), então um
    documento comum precisa de token onde cabe e tarja onde não cabe.
+   Desde **2026-09-23** isso é automático, por trecho, e decidido pelo
+   usuário: a sessão mede antes com `medir_token` — a régua do redator — e
+   manda para tarja o que não cabe, dizendo isso na tela e no relatório. A
+   reprovação do redator continua como trava; se ela disparar, as duas
+   medições discordaram, e isso é defeito.
 
    O que sobrevive do corolário antigo: os dois artefatos do mesmo documento
    usam o **alocador da sessão**, então o mesmo valor recebe o mesmo token no

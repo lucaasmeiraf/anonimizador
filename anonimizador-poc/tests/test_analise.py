@@ -244,3 +244,45 @@ def test_prompt_de_sistema_instrui_a_nao_adivinhar_o_nome():
 
     assert "nunca invente o nome real" in analise.SISTEMA.lower()
     assert "adivinh" in analise.SISTEMA.lower()
+
+
+# --------------------------------------------------------------------------
+# Disponibilidade — a tela só oferece o envio que pode acontecer
+# --------------------------------------------------------------------------
+
+
+def test_saude_da_analise_disponivel_com_chave(cliente, monkeypatch):
+    def falso_get(url, timeout=None):
+        assert url.endswith("/saude")
+        return RespostaDuble(
+            200, {"ok": True, "chave_configurada": True, "modelo_padrao": "m/x"}
+        )
+
+    monkeypatch.setattr(app_mod.httpx, "get", falso_get)
+    r = cliente.get("/api/analise/saude").json()
+    assert r == {"disponivel": True, "modelo": "m/x"}
+
+
+def test_saude_da_analise_sem_chave_nao_oferece_envio(cliente, monkeypatch):
+    """Serviço no ar sem chave: todo envio falharia, então não há botão."""
+    monkeypatch.setattr(
+        app_mod.httpx,
+        "get",
+        lambda url, timeout=None: RespostaDuble(
+            200, {"ok": True, "chave_configurada": False, "modelo_padrao": "m/x"}
+        ),
+    )
+    assert cliente.get("/api/analise/saude").json()["disponivel"] is False
+
+
+def test_saude_da_analise_fora_do_ar_nao_oferece_envio(cliente, monkeypatch):
+    """`make ui` sem o `analise`: responde, e responde que não há envio."""
+    import httpx
+
+    def get_que_falha(url, timeout=None):
+        raise httpx.ConnectError("sem rota")
+
+    monkeypatch.setattr(app_mod.httpx, "get", get_que_falha)
+    r = cliente.get("/api/analise/saude")
+    assert r.status_code == 200
+    assert r.json()["disponivel"] is False

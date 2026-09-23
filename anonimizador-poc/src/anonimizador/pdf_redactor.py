@@ -159,6 +159,20 @@ def _corpo_estimado(rect: "fitz.Rect") -> float:
     return rect.height * FATOR_CORPO
 
 
+def medir_token(token: str, caixa: "fitz.Rect") -> tuple[float, float, bool]:
+    """Largura do token, corpo estimado e se ele cabe na caixa.
+
+    Público porque a sessão precisa da **mesma** resposta antes de aprovar:
+    é ela que decide, trecho a trecho, entre token e tarja quando o token não
+    cabe (decisão de 2026-09-23). Duas medições escritas em lugares
+    diferentes acabariam discordando, e aí a tela prometeria token onde o
+    redator reprova — ou o contrário.
+    """
+    corpo = _corpo_estimado(caixa)
+    largura = fitz.get_text_length(token, FONTE_TOKEN, corpo)
+    return largura, corpo, largura <= caixa.width * (1 - FOLGA)
+
+
 def _conferir_glifos(token: str) -> None:
     for ch in token:
         try:
@@ -264,9 +278,8 @@ def redact_document(
         if token is not None:
             _conferir_glifos(token)
             _, caixa = rects[0]
-            corpo = _corpo_estimado(caixa)
-            largura = fitz.get_text_length(token, FONTE_TOKEN, corpo)
-            if largura > caixa.width * (1 - FOLGA):
+            largura, corpo, cabe = medir_token(token, caixa)
+            if not cabe:
                 nao_couberam.append(
                     TokenQueNaoCoube(
                         entity=span.entity,

@@ -664,3 +664,111 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* ------------------------------------------- envio a modelo externo ---
+ *
+ * O aviso fica entre o texto e o botao, com a borda da cor de falha: e a
+ * unica acao da tela que nao tem desfazer, e ela nao pode ter a mesma cara
+ * de um "gerar PDF". */
+#bloco-analise .previa { margin: 8px 0; }
+#bloco-analise .previa summary { cursor: pointer; font-size: 12.5px; }
+#texto-previa {
+  max-height: 260px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: 5px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.secundario-link { display: inline-block; font-size: 12.5px; color: var(--acento); margin-bottom: 10px; }
+.aviso-envio {
+  padding: 8px 10px;
+  border-left: 3px solid var(--falha);
+  background: rgba(168, 36, 31, 0.04);
+  color: var(--texto);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.aviso-envio p { margin: 0 0 6px; }
+.aviso-envio p:last-child { margin-bottom: 0; }
+.consentimento {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 10px 0;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+#pergunta {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--borda);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+  background: var(--papel);
+  color: var(--texto);
+}
+#analisando { margin-top: 8px; font-size: 13px; color: var(--suave); }
+#texto-falha, #resposta-analise { margin-top: 10px; }
+#texto-falha .cabeca, #resposta-analise .cabeca { font-weight: 600; margin-bottom: 6px; }
+#resposta-analise.ok .cabeca { color: var(--ok); }
+#texto-falha.falha .cabeca, #resposta-analise.falha .cabeca { color: var(--falha); }
+#resposta-analise .texto-resposta {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#resposta-analise .ocorrencia {
+  border: 1px solid var(--borda);
+  border-radius: 5px;
+  padding: 8px;
+  margin: 8px 0;
+}
+#resposta-analise .ocorrencia .quem {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+#resposta-analise .ocorrencia .onde { font-size: 12px; color: var(--suave); margin-top: 3px; }
+#resposta-analise .ocorrencia button { width: 100%; margin-top: 6px; }
+
+/* ------------------------------------------------ codigo no lugar ---
+ *
+ * O que o redator faz em modo codigo: caixa BRANCA, e o codigo escrito na
+ * primeira caixa do trecho. Antes a previa desenhava tarja preta nos dois
+ * modos, e o revisor escolhia "Codigo no lugar" sem ver codigo nenhum.
+ *
+ * A camada vira container para o corpo do codigo poder ir em `cqw` — relativo
+ * a largura da pagina desenhada, como as posicoes em %, e sem JavaScript
+ * recalculando a cada zoom.
+ *
+ * `.tarja.manual.codigo` com tres classes pelo mesmo motivo de
+ * `.tarja.manual.desligada` acima: `.manual` e `.codigo` empatam, e resolver
+ * por ordem quebraria na proxima edicao. */
+.camada-tarjas { container-type: inline-size; }
+.tarja.codigo,
+.tarja.manual.codigo {
+  background: #fff;
+  color: #1c1c1a;
+  box-shadow: inset 0 0 0 1px #8fa3b8;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1;
+}
+.tarja.manual.codigo { box-shadow: inset 0 0 0 1px #123a6b; }
+.subtitulo-bloco { margin: 14px 0 8px; font-size: 13px; font-weight: 600; }
+#envio-indisponivel { margin-top: 10px; }
+/* Suspeita continua visivel em modo codigo: `.codigo` redefine a sombra. */
+.tarja.codigo.suspeita { box-shadow: inset 0 0 0 1.5px #c98a1a; }

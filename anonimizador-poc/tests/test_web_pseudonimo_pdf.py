@@ -99,28 +99,45 @@ def test_span_diz_qual_operador_se_aplica(cliente, pdf):
 
 
 # --------------------------------------------------------------------------
-# A4 pela API — não coube é 422, não 500
+# Não coube → tarja naquele trecho, dito antes e depois (decisão 2026-09-23)
 # --------------------------------------------------------------------------
-def test_token_que_nao_cabe_volta_como_422_acionavel(cliente_completo, tmp_pdf):
+def test_token_que_nao_cabe_sai_em_tarja_e_isso_e_dito(cliente_completo, tmp_pdf):
     """`[CEP-xxxx]` não cabe em `01310-100`. Medido: 48,0pt contra 43,0pt.
 
-    O que o usuário recebe precisa dizer **o que fazer**, não só que falhou:
-    a mensagem nomeia a entidade e aponta as duas saídas — tarjar aquela
-    classe, ou usar a saída em texto, onde não há caixa.
+    Até 2026-09-23 isto reprovava o documento inteiro com 422 (A4). O usuário
+    decidiu trocar: o trecho sai em tarja e o resto continua em código. O que
+    este teste trava é que a troca **não é silenciosa** — a tela sabe antes
+    de aprovar (``sem_token`` no span) e o relatório conta depois, por
+    entidade, sem o valor.
     """
     caminho = tmp_pdf(
         ["Endereco do interessado:", "CEP 01310-100, nesta capital."], nome="cep.pdf"
     )
     doc = _enviar(cliente_completo, caminho, nome="cep.pdf")
-    _modo_token(cliente_completo, doc["doc_id"], tarja=())  # token até no CEP
+    antes = _modo_token(cliente_completo, doc["doc_id"], tarja=())  # token até no CEP
+
+    cep = next(s for s in antes["spans"] if s["entity"] == "CEP")
+    assert cep["sem_token"] is True, "a tela precisa saber antes de aprovar"
+    assert cep["token"] is None
 
     r = cliente_completo.post(f"/api/doc/{doc['doc_id']}/aprovar")
-    assert r.status_code == 422, r.text
-    detalhe = r.json()["detail"]
-    assert "CEP" in detalhe
-    assert "01310-100" not in detalhe, "mensagem de erro não pode carregar PII"
-    # O download continua fechado: nada foi gerado.
-    assert cliente_completo.get(f"/api/doc/{doc['doc_id']}/download").status_code == 409
+    assert r.status_code == 200, r.text
+    rel = r.json()["relatorio"]
+    assert rel["verificacao_ok"] is True
+    assert rel["tarja_por_falta_de_espaco"] == {"CEP": 1}
+    # O relatório, e não a resposta inteira: a resposta traz o `valor` de cada
+    # trecho de propósito, para a tela de revisão mostrar o que vai sair.
+    assert "01310-100" not in str(rel), "relatório não pode carregar PII"
+    assert cliente_completo.get(f"/api/doc/{doc['doc_id']}/download").status_code == 200
+
+
+def test_span_que_cabe_mostra_o_codigo_que_tera_no_pdf(cliente, pdf):
+    """A prévia desenha o código; ele vem do mesmo alocador do PDF."""
+    doc = _enviar(cliente, pdf)
+    depois = _modo_token(cliente, doc["doc_id"])
+    pessoas = [s for s in depois["spans"] if s["entity"] == "PERSON" and s["sera_tarjado"]]
+    assert pessoas and all(s["token"] and s["token"].startswith("[P-") for s in pessoas)
+    assert not any(s["sem_token"] for s in pessoas)
 
 
 # --------------------------------------------------------------------------

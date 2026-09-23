@@ -104,16 +104,36 @@ function formatarTamanho(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Qual modelo está detectando — muda o que esperar da revisão.
+// Qual modelo está detectando — muda o que esperar da revisão, e muda o que o
+// aviso de envio externo pode afirmar sobre nomes que escapam.
+let nerAtivo = null;
 fetch("/api/saude")
   .then((r) => (r.ok ? r.json() : null))
   .then((d) => {
     if (d) {
+      nerAtivo = d.ner;
       $("modelo-ativo").textContent =
         `Detecção por ${d.ner}, ${d.entidades} tipos de dado.`;
     }
   })
   .catch(() => {});
+
+// O **envio** a modelo externo só é oferecido se o serviço `analise` está no
+// ar e tem chave. Com `make ui` ele não sobe, e um botão que só devolve erro
+// seria promessa sem executor. Gerar e ler o texto não depende disso.
+let analiseDisponivel = false;
+let analiseMotivo = "verificando o serviço de análise…";
+fetch("/api/analise/saude")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((d) => {
+    analiseDisponivel = Boolean(d && d.disponivel);
+    analiseMotivo = (d && d.motivo) || "serviço de análise não respondeu";
+    if (analiseDisponivel) $("analise-modelo").textContent = d.modelo || "";
+    if (doc) sincronizarAnalise();
+  })
+  .catch(() => {
+    analiseMotivo = "serviço de análise não respondeu";
+  });
 
 /* ------------------------------------------------ sessão entre recargas ---
  *
@@ -328,7 +348,7 @@ function redesenhar() {
   camadas.forEach((c) => (c.innerHTML = ""));
 
   for (const s of doc.spans) {
-    for (const r of s.rects) {
+    for (const [i, r] of s.rects.entries()) {
       const pagina = doc.paginas[r.pagina];
       const camada = camadas[r.pagina];
       if (!pagina || !camada) continue;
@@ -337,6 +357,22 @@ function redesenhar() {
       caixa.className = "tarja";
       if (!s.sera_tarjado) caixa.classList.add("desligada");
       if (s.origem === "usuario") caixa.classList.add("manual");
+      /* Código no lugar: desenha o que o redator vai fazer — caixa branca, e
+       * o código só na primeira caixa do trecho (um valor que quebra a linha
+       * tem duas, e repetir o código faria enxergar dois atores). O corpo sai
+       * da altura da caixa pelo mesmo fator do redator (`FATOR_CORPO`), em
+       * `cqw` da camada, para acompanhar o zoom sem recalcular.
+       *
+       * `s.token` vem do servidor e já considera a largura: onde o código não
+       * cabe ele é nulo e a caixa continua tarja, como no PDF. */
+      if (s.sera_tarjado && s.token) {
+        caixa.classList.add("codigo");
+        if (i === 0) {
+          caixa.textContent = s.token;
+          const corpoPt = (r.y1 - r.y0) * 0.728;
+          caixa.style.fontSize = `${(100 * corpoPt) / pagina.largura}cqw`;
+        }
+      }
       // Detectado pela forma, não pelo dígito verificador. É palpite forte,
       // não certeza matemática, e o revisor precisa saber a diferença.
       if (s.nota === "checksum_invalido") caixa.classList.add("suspeita");
@@ -350,9 +386,11 @@ function redesenhar() {
           : "";
       const destino = !s.sera_tarjado
         ? "NÃO será alterado"
-        : s.operador === "pseudonimo"
-          ? "vira código"
-          : "será tarjado";
+        : s.token
+          ? `vira ${s.token}`
+          : s.sem_token
+            ? "será tarjado — o código não cabe neste espaço"
+            : "será tarjado";
       caixa.title = `${s.entity} · ${destino}` + porque;
       caixa.dataset.spanId = s.id;
       /* Clique na tarja: o que ele significa depende de quem a criou.
@@ -380,6 +418,7 @@ function redesenhar() {
   montarListaManuais();
   atualizarBotaoAprovar();
   sincronizarModo();
+  sincronizarAnalise();
 }
 
 /* Lista dos trechos que o usuário adicionou, com desligar e apagar.
@@ -559,19 +598,15 @@ async function alternarManuais(ligar) {
   redesenhar();
 }
 
+/* A caixa da classe. Rota própria, e não `PUT /perfil`: desmarcar uma classe
+ * que já estava em `manter` não muda regra nenhuma, e por isso não zerava os
+ * trechos que o revisor tinha ligado um a um — a caixa ficava marcada e nada
+ * acontecia. A decisão do que zerar é do servidor (`Sessao.alternar_entidade`). */
 async function alternarEntidade(entidade, ligar) {
-  const regras = {
-    ...doc.perfil.regras,
-    [entidade]: ligar ? modoAtual() : "manter",
-  };
-  doc = await enviar("/perfil", {
-    method: "PUT",
+  doc = await enviar("/entidade", {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      nome: "personalizado",
-      padrao: doc.perfil.padrao,
-      regras,
-    }),
+    body: JSON.stringify({ entidade, ligar }),
   });
   limparResultado();
   redesenhar();
@@ -607,18 +642,25 @@ function sincronizarModo() {
     : "O PDF só é gerado agora. Ele passa por verificação em 10 vetores antes " +
       "de ser liberado.";
 
-  /* Valor curto não comporta código, e o usuário precisa saber ANTES de
-   * aprovar — não ao receber o erro. Medido em 2026-09-16: `[CEP-2C81]` ocupa
-   * 48,0pt e um CEP deixa 43,0pt de espaço. */
-  const curtas = (doc.spans || [])
-    .filter((s) => s.sera_tarjado && s.operador === "pseudonimo")
-    .map((s) => s.entity);
+  /* Valor curto não comporta código — medido em 2026-09-16: `[CEP-2C81]` ocupa
+   * 48,0pt e um CEP deixa 43,0pt. Desde 2026-09-23 esses trechos saem em
+   * tarja em vez de reprovar o documento, e o usuário precisa saber disso
+   * ANTES de aprovar: é menos "quem é quem" do que ele pediu. A contagem vem
+   * do servidor (`sem_token`), que mede com a mesma régua do redator. */
+  const semToken = {};
+  for (const s of doc.spans || []) {
+    if (s.sem_token) semToken[s.entity] = (semToken[s.entity] || 0) + 1;
+  }
+  const total = Object.values(semToken).reduce((a, b) => a + b, 0);
   const aviso = $("aviso-curtas");
-  if (token && curtas.some((e) => e === "CEP" || e === "DATE_TIME")) {
+  if (token && total) {
+    const lista = Object.entries(semToken)
+      .map(([e, n]) => `${e} (${n})`)
+      .join(", ");
     aviso.textContent =
-      "Atenção: CEP e datas são curtos demais para caber um código sem " +
-      "deformar a linha. Deixe essas classes em tarja na lista abaixo, ou o " +
-      "documento será reprovado na hora de gerar o PDF.";
+      `${total} trecho(s) não têm espaço para o código e vão em tarja preta: ` +
+      `${lista}. O valor sai do documento do mesmo jeito; o texto para a IA ` +
+      `usa código em todos.`;
     aviso.classList.remove("hidden");
   } else {
     aviso.classList.add("hidden");
@@ -798,6 +840,7 @@ async function adicionarTermo(valor) {
 function limparResultado() {
   $("resultado").classList.add("hidden");
   $("resultado").className = "hidden";
+  $("texto-falha").classList.add("hidden");
 }
 
 $("btn-aprovar").addEventListener("click", async () => {
@@ -824,10 +867,18 @@ function mostrarResultado() {
   r.className = rel.verificacao_ok ? "ok" : "falha";
 
   if (rel.verificacao_ok) {
+    // Troca de código por tarja nunca é silenciosa: se aconteceu, está aqui.
+    const semEspaco = Object.entries(rel.tarja_por_falta_de_espaco || {});
+    const linhaSemEspaco = semEspaco.length
+      ? `<li>${semEspaco.reduce((a, [, n]) => a + n, 0)} em tarja porque o ` +
+        `código não cabia: ${escapar(semEspaco.map(([e, n]) => `${e} (${n})`).join(", "))}</li>`
+      : "";
     r.innerHTML = `
       <div class="cabeca">Verificação aprovada</div>
       <ul>
         <li>${rel.spans_redigidos} trechos redigidos, ${rel.retangulos} retângulos</li>
+        ${rel.tokens_escritos ? `<li>${rel.tokens_escritos} códigos escritos no lugar do valor</li>` : ""}
+        ${linhaSemEspaco}
         <li>${rel.valores_checados} valores conferidos em ${rel.vetores.length} vetores</li>
         <li>nenhum valor sobreviveu no arquivo final</li>
       </ul>
@@ -900,6 +951,259 @@ function mostrarResultado() {
     }
   }
   r.classList.remove("hidden");
+}
+
+/* ------------------------------------------- análise por modelo externo ---
+ *
+ * O único caminho do sistema que faz conteúdo sair da máquina. As travas de
+ * verdade estão no servidor (`POST /analisar`): texto verificado, re-detecção
+ * com limiar mais baixo, uma chamada por documento. Esta tela não substitui
+ * nenhuma delas; o que ela acrescenta é o que o servidor não consegue fazer —
+ * pôr o texto na frente de quem vai enviá-lo, e dizer antes do botão o que as
+ * travas **não** provam (`docs/05-politica-llm.md` §2.6).
+ *
+ * O estado vem do servidor, como no resto do arquivo: se o texto foi
+ * invalidado por uma edição, `pode_baixar_texto` volta falso e o bloco volta
+ * ao começo. Nada daqui decide se algo pode sair.
+ */
+
+/* Documentos, em 50, em que algum nome real sobreviveu no arquivo final.
+ *
+ * Do `make eval` de 2026-09-22, refeito em 2026-09-23 com o NER corrigido
+ * (mesmos números), corpus sintético, seção "Verificação
+ * pós-redação" do `eval/report.md`. É número medido, não estimativa — e
+ * envelhece: quando o detector mudar, isto precisa ser remedido junto, ou o
+ * aviso passa a afirmar uma taxa que já não é a do sistema. Modelo fora desta
+ * tabela recebe a frase sem número, nunca o número de outro modelo. */
+const NOMES_ESCAPADOS_EM_50 = {
+  "bert-lenerbr": 1,
+  "bertimbau-harem": 8,
+  spacy: 50,
+};
+
+let textoPrevia = "";
+
+/* Volta o bloco ao estado "nada gerado". A mensagem de falha da geração não
+ * entra aqui: ela precisa sobreviver ao redesenho que segue a própria falha,
+ * e sai em `limparResultado`, que toda edição chama. */
+function limparAnalise() {
+  textoPrevia = "";
+  $("texto-previa").textContent = "";
+  $("texto-gerado").classList.add("hidden");
+  $("resposta-analise").classList.add("hidden");
+  $("resposta-analise").innerHTML = "";
+  $("chk-consentimento").checked = false;
+  $("btn-analisar").disabled = true;
+}
+
+function sincronizarAnalise() {
+  if (!doc) return;
+  $("bloco-analise").classList.remove("hidden");
+  $("envio-externo").classList.toggle("hidden", !analiseDisponivel);
+  $("envio-indisponivel").classList.toggle("hidden", analiseDisponivel);
+  $("envio-indisponivel").textContent =
+    `Envio a modelo externo indisponível: ${analiseMotivo}. ` +
+    `O texto pode ser lido e baixado mesmo assim.`;
+
+  $("btn-gerar-texto").disabled = !doc.spans.some((s) => s.sera_tarjado);
+
+  if (!doc.pode_baixar_texto) {
+    // Edição depois de gerar: o servidor apagou o texto, e o consentimento
+    // dado para aquele texto não vale para o próximo.
+    limparAnalise();
+    return;
+  }
+
+  const rel = doc.relatorio_texto;
+  $("texto-relatorio").textContent =
+    `${rel.spans_substituidos} trechos substituídos por ${rel.tokens_distintos} ` +
+    `códigos. Conferido: nenhum dos ${rel.valores_checados} valores ` +
+    `substituídos sobreviveu, e todo código está no texto.`;
+  $("link-texto").href = `/api/doc/${doc.doc_id}/download/texto`;
+
+  const n = NOMES_ESCAPADOS_EM_50[nerAtivo];
+  $("taxa-nomes").textContent =
+    n === undefined
+      ? "Nomes de pessoa podem escapar à detecção."
+      : `Nos testes com documentos sintéticos, usando este mesmo detector ` +
+        `(${nerAtivo}), algum nome escapou em ${n} de cada 50 documentos.`;
+
+  const envios = doc.envios || [];
+  const ant = $("envios-anteriores");
+  ant.classList.toggle("hidden", envios.length === 0);
+  ant.textContent = `Este documento já foi enviado ${envios.length} vez(es) nesta sessão.`;
+
+  // Sessão retomada depois de um F5: o texto existe no servidor, mas a prévia
+  // não está neste navegador. Sem ela a recusa da re-detecção não teria como
+  // mostrar o trecho.
+  if (!textoPrevia) carregarPrevia().catch(() => {});
+
+  $("texto-gerado").classList.remove("hidden");
+  $("texto-falha").classList.add("hidden");
+  $("btn-analisar").disabled = !$("chk-consentimento").checked;
+}
+
+/* A prévia vem da mesma rota do download, atrás do mesmo gate: o que se lê
+ * aqui é byte a byte o que será enviado, e não uma reconstrução local. */
+async function carregarPrevia() {
+  const r = await fetch(`/api/doc/${doc.doc_id}/download/texto`);
+  if (!r.ok) throw new Error("o texto gerado não pôde ser lido");
+  textoPrevia = await r.text();
+  $("texto-previa").textContent = textoPrevia;
+}
+
+$("chk-consentimento").addEventListener("change", () => {
+  $("btn-analisar").disabled = !$("chk-consentimento").checked;
+});
+
+$("btn-gerar-texto").addEventListener("click", async () => {
+  const btn = $("btn-gerar-texto");
+  btn.disabled = true;
+  limparAnalise();
+  $("texto-falha").classList.add("hidden");
+  try {
+    doc = await enviar("/pseudonimizar", { method: "POST" });
+    if (doc.pode_baixar_texto) {
+      await carregarPrevia();
+    } else {
+      mostrarFalhaTexto(doc.relatorio_texto);
+    }
+  } catch (e) {
+    mostrarFalhaTexto(null, e.message);
+  } finally {
+    redesenhar();
+  }
+});
+
+function mostrarFalhaTexto(rel, mensagem) {
+  const f = $("texto-falha");
+  f.className = "falha";
+  f.innerHTML = `<div class="cabeca">Texto reprovado na verificação — nada foi gerado</div>`;
+  const p = document.createElement("p");
+  p.className = "aviso";
+  if (mensagem) {
+    p.textContent = mensagem;
+  } else {
+    // Código não é dado pessoal: pode ser nomeado. O valor, não.
+    const perdidos = (rel && rel.tokens_ausentes) || [];
+    p.textContent =
+      `${rel ? rel.total_vazamentos : "?"} ocorrência(s) em: ` +
+      `${rel ? rel.vazamentos.join(", ") : "?"}.` +
+      (perdidos.length ? ` Códigos que se perderam: ${perdidos.join(", ")}.` : "");
+  }
+  f.appendChild(p);
+}
+
+$("btn-analisar").addEventListener("click", async () => {
+  // Consentimento é por envio, não por sessão: desmarca antes de qualquer
+  // outra coisa, para que um segundo clique exija decidir de novo.
+  $("chk-consentimento").checked = false;
+  $("btn-analisar").disabled = true;
+  $("analisando").classList.remove("hidden");
+  const saida = $("resposta-analise");
+  saida.classList.add("hidden");
+  saida.innerHTML = "";
+
+  try {
+    const r = await fetch(`/api/doc/${doc.doc_id}/analisar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: $("pergunta").value.trim() || undefined }),
+    });
+    const dados = await r.json();
+    if (!r.ok) {
+      mostrarRecusaEnvio(dados.detail);
+    } else {
+      mostrarResposta(dados);
+    }
+    // O envio entrou na trilha do servidor; relê o estado para a contagem.
+    doc = await enviar("", { method: "GET" });
+  } catch (e) {
+    saida.className = "falha";
+    saida.innerHTML = `<div class="cabeca">Falhou</div>`;
+    const p = document.createElement("p");
+    p.textContent = e.message;
+    saida.appendChild(p);
+  } finally {
+    $("analisando").classList.add("hidden");
+    saida.classList.remove("hidden");
+    redesenhar();
+  }
+});
+
+function mostrarResposta(dados) {
+  const a = dados.analise;
+  const saida = $("resposta-analise");
+  saida.className = "ok";
+  const cab = document.createElement("div");
+  cab.className = "cabeca";
+  cab.textContent = `Resposta de ${a.modelo}`;
+  // textContent, nunca innerHTML: é texto vindo de fora da máquina.
+  const corpo = document.createElement("div");
+  corpo.className = "texto-resposta";
+  corpo.textContent = a.resposta;
+  const meta = document.createElement("p");
+  meta.className = "aviso";
+  meta.textContent =
+    `${a.caracteres_enviados} caracteres enviados, ${a.duracao_s}s. ` +
+    `Os códigos na resposta são os mesmos do texto; o original está com você.`;
+  saida.append(cab, corpo, meta);
+}
+
+/* A recusa da re-detecção vem com entidade e posição, nunca com o valor — o
+ * servidor não copia para a resposta o dado que acabou de descobrir que não
+ * devia estar ali. A tela mostra o trecho a partir da prévia, que já está
+ * neste navegador, para o revisor poder corrigir.
+ *
+ * As posições são contadas pelo Python em code points; `slice` do JavaScript
+ * conta UTF-16. Com um caractere fora do plano básico antes do achado, as duas
+ * contagens divergem e o trecho mostrado seria o vizinho — o mesmo problema
+ * que `Sessao._conferir_intervalo` resolve do outro lado. `Array.from` separa
+ * por code point, e aí as contas batem. */
+function mostrarRecusaEnvio(detalhe) {
+  const saida = $("resposta-analise");
+  saida.className = "falha";
+  if (!detalhe || typeof detalhe === "string") {
+    saida.innerHTML = `<div class="cabeca">Nada foi enviado</div>`;
+    const p = document.createElement("p");
+    p.textContent = detalhe || "o servidor recusou o envio";
+    saida.appendChild(p);
+    return;
+  }
+
+  saida.innerHTML = `
+    <div class="cabeca">Nada foi enviado</div>
+    <p class="aviso">
+      A conferência antes do envio achou no texto algo que deveria ter sido
+      substituído. Quase sempre é outra ocorrência que o detector não marcou.
+    </p>`;
+  const pontos = Array.from(textoPrevia);
+  const vistos = new Set();
+  for (const a of detalhe.achados || []) {
+    const trecho = pontos.slice(a.inicio, a.fim).join("");
+    const chave = `${a.entidade}|${trecho}`;
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+
+    const card = document.createElement("div");
+    card.className = "ocorrencia";
+    const quem = document.createElement("div");
+    quem.className = "quem";
+    quem.textContent = trecho || `(posição ${a.inicio}–${a.fim})`;
+    const onde = document.createElement("div");
+    onde.className = "onde";
+    onde.textContent = `detectado como ${a.entidade}`;
+    card.append(quem, onde);
+    if (trecho.trim().length >= 2) {
+      const b = document.createElement("button");
+      b.textContent = "Substituir todas as ocorrências";
+      // Mesmo caminho do termo digitado. A edição invalida o texto gerado, e
+      // o usuário gera de novo antes de poder enviar.
+      b.addEventListener("click", () => adicionarTermo(trecho));
+      card.appendChild(b);
+    }
+    saida.appendChild(card);
+  }
 }
 
 // -------------------------------------------------------------- descarte
@@ -1036,6 +1340,7 @@ function voltarAoInicio() {
   $("termo").value = "";
   $("aviso-termo").classList.add("hidden");
   limparResultado();
+  limparAnalise();
 
   $("tela-revisao").classList.add("hidden");
   $("cabecalho-doc").classList.add("hidden");

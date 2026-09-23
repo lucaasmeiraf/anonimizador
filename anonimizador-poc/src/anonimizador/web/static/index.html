@@ -170,6 +170,73 @@
       <div id="resultado" class="hidden"></div>
     </div>
 
+    <!-- Texto com codigos + envio a LLM externa (goal-fase-3 §2.9, docs/05
+         §2.6). Gerar e ler o texto e local e aparece sempre; so a parte de
+         envio depende do servico `analise` com chave, e sem ele diz por que
+         nao esta disponivel em vez de sumir. O aviso fica ANTES do botao e o
+         botao so destrava com o consentimento marcado, por envio — e o unico
+         caminho do sistema que faz conteudo sair da maquina. -->
+    <div class="bloco hidden" id="bloco-analise">
+      <h3>Texto com códigos, para IA</h3>
+      <p class="ajuda">
+        Uma versão em texto do documento, com um código no lugar de cada dado
+        marcado acima — em todos, inclusive onde o PDF ficou em tarja. É
+        gerada aqui, sem rede, e pode ser lida e baixada antes de qualquer
+        envio.
+      </p>
+      <button id="btn-gerar-texto" class="largo">Gerar texto com códigos</button>
+      <div id="texto-falha" class="hidden"></div>
+
+      <div id="texto-gerado" class="hidden">
+        <p class="ajuda" id="texto-relatorio"></p>
+        <details class="previa">
+          <summary>Ler o texto que será enviado</summary>
+          <pre id="texto-previa"></pre>
+        </details>
+        <a id="link-texto" class="secundario-link" href="#">Baixar o texto (.txt)</a>
+
+        <p class="aviso hidden" id="envio-indisponivel"></p>
+        <div id="envio-externo" class="hidden">
+        <h3 class="subtitulo-bloco">Perguntar a um modelo externo
+          (<span id="analise-modelo"></span>)</h3>
+        <div class="aviso-envio" id="aviso-envio">
+          <p>
+            <strong>Isto não garante que tudo que era dado pessoal foi
+            detectado.</strong>
+            <span id="taxa-nomes"></span>
+            Referências indiretas — <em>“o único servidor cego da
+            repartição”</em> — não são detectadas de forma alguma, e um modelo
+            de IA é justamente bom em reconstruir quem é a pessoa a partir
+            delas. Leia o texto acima antes de enviar.
+          </p>
+          <p>
+            <strong>O envio é irreversível.</strong> O que sair pode ser
+            registrado pelo provedor, e apagar depois não desfaz. Quanto tempo
+            ele guarda depende da configuração da conta no OpenRouter, que esta
+            ferramenta não confere.
+          </p>
+          <p>
+            Antes de sair, o texto passa de novo pela detecção. Se ela achar
+            algo que deveria ter sido substituído, nada é enviado.
+          </p>
+        </div>
+
+        <label class="consentimento">
+          <input type="checkbox" id="chk-consentimento">
+          Li o texto e o aviso acima, e quero enviar este documento.
+        </label>
+        <textarea id="pergunta" rows="3">Resuma este documento, dizendo quem fez o quê.</textarea>
+        <button id="btn-analisar" class="primario" disabled>Enviar ao modelo externo</button>
+        <p class="aviso hidden" id="envios-anteriores"></p>
+        </div>
+      </div>
+
+      <div id="analisando" class="hidden">
+        <span class="girando"></span> Conferindo e aguardando o modelo…
+      </div>
+      <div id="resposta-analise" class="hidden"></div>
+    </div>
+
     <details class="bloco limitacoes">
       <summary>O que a anonimização altera além das tarjas</summary>
       <ul>
