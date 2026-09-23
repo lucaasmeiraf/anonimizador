@@ -243,15 +243,76 @@ class TransformersNerRecognizer(EntityRecognizer):
                 score = float(ent["score"])
                 if score < self.score_minimo:
                     continue
-                s, e = self._aparar(text, ini + ent["start"], ini + ent["end"])
-                if e > s:
-                    brutos.append((s, e, rotulo, score))
+                for s, e in self._cortar_na_quebra(
+                    text, ini + ent["start"], ini + ent["end"]
+                ):
+                    s, e = self._aparar(text, s, e)
+                    if e > s:
+                        brutos.append((s, e, rotulo, score))
 
         return [
             RecognizerResult(entity_type=r, start=s, end=e, score=sc,
                              analysis_explanation=None)
-            for s, e, r, sc in self._desduplicar(brutos)
+            for s, e, r, sc in self._colar_fragmentos(self._desduplicar(brutos))
         ]
+
+    @staticmethod
+    def _cortar_na_quebra(text: str, start: int, end: int) -> list[tuple[int, int]]:
+        """Divide o span do modelo em cada quebra de linha.
+
+        O NER às vezes estende um nome por cima da quebra até o começo do nome
+        seguinte: ``'Cauê Viana\\nAna'``, colado em ``'Ana Sophia
+        Aparecida'``. Os dois se sobrepõem, ``resolver_sobreposicoes`` aceita
+        o mais longo e **descarta o outro inteiro** — e "Cauê Viana" saía sem
+        tarja. Achado em 2026-09-23 no `rh-013`, quando `_colar_fragmentos`
+        juntou os pedaços do nome e o vazamento, antes parcial ("ê Viana"
+        visível, invisível para o verificador), ficou inteiro e apareceu.
+
+        Cortar nunca perde cobertura: os dois lados continuam sendo detecção.
+        O custo é o nome que quebra de linha num parágrafo justificado virar
+        dois trechos — em tarja isso não se vê; em código ele ganha dois
+        códigos. Mais legível que o contrário, e sem vazar.
+        """
+        partes = []
+        ini = start
+        for i in range(start, end):
+            if text[i] == "\n":
+                partes.append((ini, i))
+                ini = i + 1
+        partes.append((ini, end))
+        return [(s, e) for s, e in partes if e > s]
+
+    @staticmethod
+    def _colar_fragmentos(spans: list[tuple[int, int, str, float]]):
+        """Junta pedaços da mesma entidade que se tocam sem nenhum caractere
+        entre eles.
+
+        A agregação ``simple`` parte uma palavra quando o modelo rotula uma
+        subpalavra do meio como início de entidade. Medido em 2026-09-23 sobre
+        o corpus, com `bert-lenerbr`: 1.393 pares colados de ``DATE_TIME``
+        (``'20'`` + ``'/'`` + ``'12'``…) e 386 de ``PERSON`` (``'El'`` +
+        ``'oa'``). Em tarja isso não se via — os retângulos encostam e formam
+        uma barra só. Em token, cada pedaço ganhava o seu código: "Eloah"
+        virava ``[P-AAAA][P-BBBB]``, o mesmo nome deixava de ter o mesmo token,
+        e caixas de 2,8pt reprovavam o documento.
+
+        **Só o colado.** Pedaço separado por espaço fica separado, e isso
+        também foi medido: os 31 pares de ``PERSON`` separados só por espaço
+        no corpus eram *duas pessoas* em linhas vizinhas (``'Diogo da
+        Rocha\\nLeandro Pereira'``). Juntá-los fundiria duas pessoas num
+        código.
+        """
+        if not spans:
+            return []
+        ordenados = sorted(spans, key=lambda x: (x[0], x[1]))
+        saida = [ordenados[0]]
+        for s, e, r, sc in ordenados[1:]:
+            s0, e0, r0, sc0 = saida[-1]
+            if r == r0 and s == e0:
+                saida[-1] = (s0, e, r0, max(sc, sc0))
+            else:
+                saida.append((s, e, r, sc))
+        return saida
 
     @staticmethod
     def _aparar(text: str, start: int, end: int) -> tuple[int, int]:
