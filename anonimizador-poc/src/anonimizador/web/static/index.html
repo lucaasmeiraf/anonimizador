@@ -3,12 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Anonimizador — revisão</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z' fill='%232563eb'/%3E%3Crect x='8' y='10.5' width='8' height='2.4' fill='white'/%3E%3Crect x='9.5' y='14.4' width='5' height='2.4' fill='white'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/estilo.css">
 </head>
 <body>
 
-<header>
+<!-- Barra do topo. Fixa: a ação principal nunca sai da tela. As etapas são
+     desenhadas a partir de dados (`ETAPAS` em app.js), para a etapa de
+     análise por IA entrar sem refazer o layout. -->
+<header class="topo">
   <div class="marca">
     <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z"
@@ -17,14 +22,28 @@
       <rect x="8" y="10.5" width="8" height="2.4" rx=".5" fill="currentColor"/>
       <rect x="9.5" y="14.4" width="5" height="2.4" rx=".5" fill="currentColor"/>
     </svg>
-    <div>
-      <span class="nome-produto">Anonimizador</span>
-      <span class="fase">revisão assistida · LGPD</span>
+    <span class="nome-produto">Anonimizador</span>
+  </div>
+
+  <div id="cabecalho-doc" class="arquivo hidden">
+    <span class="separador" aria-hidden="true">·</span>
+    <button id="btn-arquivo" class="botao-arquivo" aria-haspopup="menu"
+            aria-expanded="false" aria-controls="menu-arquivo">
+      <span id="nome-arquivo"></span>
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div id="menu-arquivo" class="menu hidden" role="menu">
+      <button id="menu-trocar" role="menuitem">Trocar arquivo…</button>
+      <button id="btn-descartar" role="menuitem" class="item-perigo">Descartar documento…</button>
     </div>
   </div>
-  <div id="cabecalho-doc" class="hidden">
-    <span id="nome-arquivo"></span>
-    <button id="btn-descartar" class="secundario">Descartar documento</button>
+
+  <ol id="etapas" class="etapas hidden" aria-label="Etapas"></ol>
+
+  <div id="topo-acoes" class="topo-acoes hidden">
+    <button id="btn-atalhos" class="icone-botao" aria-label="Atalhos de teclado"
+            aria-haspopup="dialog" aria-controls="popover-atalhos">?</button>
+    <button id="btn-principal" class="primario">Aprovar e gerar PDF</button>
   </div>
 </header>
 
@@ -33,7 +52,7 @@
   <div class="abertura">
 
     <div class="chamada">
-      <h2>Anonimize um documento sem tirá-lo desta máquina</h2>
+      <h1>Anonimize um documento sem tirá-lo desta máquina</h1>
       <p class="subtitulo">
         A detecção roda localmente. O arquivo final só é liberado depois de
         passar por uma verificação independente em dez frentes.
@@ -44,9 +63,9 @@
       <input type="file" id="arquivo" accept="application/pdf" hidden>
       <svg class="icone" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 15V3m0 0L8 7m4-4 4 4" fill="none" stroke="currentColor"
-              stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M3 15v3.5A2.5 2.5 0 0 0 5.5 21h13a2.5 2.5 0 0 0 2.5-2.5V15"
-              fill="none" stroke="currentColor" stroke-width="1.6"
+              fill="none" stroke="currentColor" stroke-width="1.5"
               stroke-linecap="round"/>
       </svg>
       <div class="zona-titulo">Arraste um PDF aqui</div>
@@ -54,15 +73,27 @@
       <div class="zona-meta">PDF com texto selecionável · até 50 MB</div>
     </label>
 
-    <p id="erro-upload" class="erro hidden"></p>
+    <div id="erro-upload" class="erro hidden" role="alert"></div>
 
-    <div id="carregando-upload" class="progresso hidden">
-      <span class="girando"></span>
-      <div>
-        <div class="progresso-titulo">Detectando dados pessoais…</div>
-        <div class="progresso-sub" id="progresso-sub">
-          O modelo lê o documento inteiro; alguns segundos por página.
+    <!-- Carregando. As etapas são as que existem de fato: o envio tem
+         progresso medido; extração e detecção acontecem numa única chamada
+         ao servidor e não dá para separá-las sem inventar números. -->
+    <div id="carregando-upload" class="carregando hidden" aria-live="polite">
+      <div class="carregando-cabeca">
+        <span class="girando"></span>
+        <div>
+          <div class="progresso-titulo" id="progresso-titulo">Preparando…</div>
+          <div class="progresso-sub" id="progresso-sub"></div>
         </div>
+      </div>
+      <ol class="etapas-upload">
+        <li id="etapa-envio">Enviando o arquivo <span id="envio-pct"></span></li>
+        <li id="etapa-deteccao">Extraindo texto e detectando dados — alguns segundos por página</li>
+        <li id="etapa-pronto">Pronto</li>
+      </ol>
+      <div class="esqueleto" aria-hidden="true">
+        <div class="esqueleto-pagina"></div>
+        <div class="esqueleto-pagina"></div>
       </div>
     </div>
 
@@ -79,7 +110,7 @@
       </li>
       <li>
         <strong>Você aprova</strong>
-        Nada é gerado antes de você revisar tarja por tarja e aprovar.
+        Nada é gerado antes de você revisar e aprovar.
       </li>
     </ul>
 
@@ -94,213 +125,369 @@
 <!-- ------------------------------------------------------------------ -->
 <main id="tela-revisao" class="hidden">
 
-  <div class="painéis">
-    <section class="painel">
-      <h2>Original</h2>
-      <div class="rolagem" id="rolagem-esq"></div>
-    </section>
-    <section class="painel">
-      <h2>Anonimizado <span class="dica">clique numa tarja para desligá-la</span></h2>
-      <div class="rolagem" id="rolagem-dir"></div>
-    </section>
-  </div>
+  <!-- Trilho de miniaturas -->
+  <nav id="trilho" class="trilho" aria-label="Páginas">
+    <button id="btn-trilho" class="icone-botao trilho-alternar"
+            aria-label="Recolher miniaturas" aria-expanded="true">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9 4.5v15"/>
+      </svg>
+    </button>
+    <div id="miniaturas" class="miniaturas"></div>
+  </nav>
 
-  <aside id="lateral">
-    <!-- A6 do goal-fase-2: a escolha entre os dois operadores, com a
-         diferenca dita AQUI, no momento de escolher, e nao numa configuracao
-         escondida. A linha sobre irreversibilidade e requisito RN-01. -->
-    <div class="bloco" id="bloco-modo">
-      <h3>O que fica no lugar do dado</h3>
-      <label class="modo">
-        <input type="radio" name="modo" value="tarja" checked>
-        <span class="modo-titulo">Tarja preta</span>
-        <span class="modo-ajuda">
-          O valor some e o espaço fica coberto. Quem lê o documento não sabe
-          que havia alguém ali, nem se é a mesma pessoa de outro trecho.
-        </span>
-      </label>
-      <label class="modo">
-        <input type="radio" name="modo" value="pseudonimo">
-        <span class="modo-titulo">Código no lugar <code>[P-7F3A]</code></span>
-        <span class="modo-ajuda">
-          O valor some e um código ocupa o lugar. Quem lê sabe que havia uma
-          pessoa — e que é a mesma pessoa dos outros trechos. É o formato para
-          mandar o documento a uma análise automatizada.
-        </span>
-      </label>
-      <p class="aviso-irreversivel">
-        Nos dois casos o valor é <strong>removido do arquivo</strong>. O código
-        é sorteado, não calculado a partir do dado: não existe chave, não há
-        mapa guardado, e <strong>nem nós conseguimos voltar atrás</strong>.
-      </p>
-      <p class="aviso hidden" id="aviso-curtas"></p>
-    </div>
-
-    <div class="bloco">
-      <h3 id="titulo-inventario">O que será anonimizado</h3>
-      <ul id="inventario"></ul>
-    </div>
-
-    <div class="bloco">
-      <h3>Faltou alguma coisa?</h3>
-      <p class="ajuda">
-        Selecione o trecho no documento e copie (Ctrl+C), ou digite. Todas as
-        ocorrências entram.
-      </p>
-      <div class="linha">
-        <input type="text" id="termo" placeholder="ex.: Maria Fernanda da Mata">
-        <button id="btn-termo">Tarjar</button>
+  <!-- Visualizador: um documento, três modos -->
+  <section id="visualizador" class="visualizador" aria-label="Documento">
+    <div class="barra-visualizador">
+      <div class="segmentado" role="group" aria-label="Modo de visualização">
+        <button id="vista-anonimizado" data-vista="anonimizado" aria-pressed="true">Anonimizado</button>
+        <button id="vista-original" data-vista="original" aria-pressed="false">Original</button>
+        <button id="vista-comparar" data-vista="comparar" aria-pressed="false">Comparar</button>
       </div>
-      <p id="aviso-termo" class="aviso hidden"></p>
-      <div id="manuais" class="hidden">
-        <div class="rotulo-lista">Trechos que você adicionou</div>
-        <ul id="lista-manuais"></ul>
+
+      <button id="btn-previa" class="alternador" aria-pressed="false"
+              title="Mostra a tarja preta ou o código como vão sair no PDF (P)">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        Ver como ficará
+      </button>
+
+      <div class="espaco"></div>
+
+      <div class="zoom" role="group" aria-label="Zoom">
+        <button id="btn-zoom-menos" class="icone-botao" aria-label="Diminuir zoom">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+        </button>
+        <span id="zoom-valor" class="zoom-valor">100%</span>
+        <button id="btn-zoom-mais" class="icone-botao" aria-label="Aumentar zoom">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+      <span id="indicador-pagina" class="indicador-pagina" aria-live="polite"></span>
+      <button id="btn-inspetor" class="icone-botao so-estreito" aria-label="Abrir painel lateral"
+              aria-controls="inspetor" aria-expanded="false">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M15 4.5v15"/>
+        </svg>
+      </button>
+    </div>
+
+    <div id="rolagem" class="rolagem" tabindex="-1">
+      <div id="colunas" class="colunas vista-anonimizado">
+        <div id="coluna-original" class="coluna" aria-label="Original"></div>
+        <div id="coluna-anonimizado" class="coluna" aria-label="Anonimizado"></div>
       </div>
     </div>
+  </section>
 
-    <div class="bloco" id="bloco-aprovar">
-      <button id="btn-aprovar" class="primario">Aprovar e gerar PDF</button>
-      <p class="ajuda" id="ajuda-aprovar">
-        O PDF só é gerado agora. Ele passa por verificação em 10 vetores antes
-        de ser liberado.
-      </p>
-      <div id="processando" class="hidden">
-        <span class="girando"></span> Redigindo e verificando…
-      </div>
-      <div id="resultado" class="hidden"></div>
+  <!-- Inspetor em abas -->
+  <aside id="inspetor" class="inspetor" aria-label="Revisão">
+    <button id="selo-verificacao" class="selo selo-neutro" aria-live="polite"
+            aria-controls="lista-pendencias" aria-expanded="false">
+      <span class="selo-icone" id="selo-icone"></span>
+      <span id="selo-texto">Aguardando a primeira verificação…</span>
+    </button>
+    <div id="lista-pendencias" class="pendencias hidden"></div>
+
+    <div class="abas" role="tablist" aria-label="Seções">
+      <button id="aba-deteccoes" role="tab" aria-selected="true" aria-controls="painel-deteccoes">Detecções</button>
+      <button id="aba-ajustes" role="tab" aria-selected="false" aria-controls="painel-ajustes" tabindex="-1">Ajustes</button>
+      <button id="aba-exportar" role="tab" aria-selected="false" aria-controls="painel-exportar" tabindex="-1">Exportar</button>
     </div>
 
-    <!-- Texto com codigos + envio a LLM externa (goal-fase-3 §2.9, docs/05
-         §2.6). Gerar e ler o texto e local e aparece sempre; so a parte de
-         envio depende do servico `analise` com chave, e sem ele diz por que
-         nao esta disponivel em vez de sumir. O aviso fica ANTES do botao e o
-         botao so destrava com o consentimento marcado, por envio — e o unico
-         caminho do sistema que faz conteudo sair da maquina. -->
-    <div class="bloco hidden" id="bloco-analise">
-      <h3>Texto com códigos, para IA</h3>
-      <p class="ajuda">
-        Uma versão em texto do documento, com um código no lugar de cada dado
-        marcado acima — em todos, inclusive onde o PDF ficou em tarja. É
-        gerada aqui, sem rede, e pode ser lida e baixada antes de qualquer
-        envio.
-      </p>
-      <button id="btn-gerar-texto" class="largo">Gerar texto com códigos</button>
-      <div id="texto-falha" class="hidden"></div>
-
-      <div id="texto-gerado" class="hidden">
-        <p class="ajuda" id="texto-relatorio"></p>
-        <details class="previa">
-          <summary>Ler o texto que será enviado</summary>
-          <pre id="texto-previa"></pre>
-        </details>
-        <a id="link-texto" class="secundario-link" href="#">Baixar o texto (.txt)</a>
-
-        <p class="aviso hidden" id="envio-indisponivel"></p>
-        <div id="envio-externo" class="hidden">
-        <h3 class="subtitulo-bloco">Perguntar a um modelo externo
-          (<span id="analise-modelo"></span>)</h3>
-        <div class="aviso-envio" id="aviso-envio">
-          <p>
-            <strong>Isto não garante que tudo que era dado pessoal foi
-            detectado.</strong>
-            <span id="taxa-nomes"></span>
-            Referências indiretas — <em>“o único servidor cego da
-            repartição”</em> — não são detectadas de forma alguma, e um modelo
-            de IA é justamente bom em reconstruir quem é a pessoa a partir
-            delas. Leia o texto acima antes de enviar.
-          </p>
-          <p>
-            <strong>O envio é irreversível.</strong> O que sair pode ser
-            registrado pelo provedor, e apagar depois não desfaz. Quanto tempo
-            ele guarda depende da configuração da conta no OpenRouter, que esta
-            ferramenta não confere.
-          </p>
-          <p>
-            Antes de sair, o texto passa de novo pela detecção. Se ela achar
-            algo que deveria ter sido substituído, nada é enviado.
-          </p>
+    <!-- ============================ Detecções ============================ -->
+    <div id="painel-deteccoes" class="painel" role="tabpanel" aria-labelledby="aba-deteccoes">
+      <div class="resumo">
+        <p id="resumo-deteccoes" class="resumo-titulo"></p>
+        <div class="progresso-revisao">
+          <div class="barra" role="progressbar" id="barra-revisao"
+               aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"
+               aria-label="Ocorrências revisadas"><span id="barra-revisao-cheia"></span></div>
+          <span id="texto-revisao" class="auxiliar"></span>
         </div>
-
-        <label class="consentimento">
-          <input type="checkbox" id="chk-consentimento">
-          Li o texto e o aviso acima, e quero enviar este documento.
-        </label>
-        <textarea id="pergunta" rows="3">Resuma este documento, dizendo quem fez o quê.</textarea>
-        <button id="btn-analisar" class="primario" disabled>Enviar ao modelo externo</button>
-        <p class="aviso hidden" id="envios-anteriores"></p>
+        <div class="navegacao">
+          <button id="btn-anterior" class="secundario pequeno" title="Anterior (K ou ↑)">‹ anterior</button>
+          <button id="btn-proximo" class="secundario pequeno" title="Próximo (J ou ↓)">próximo ›</button>
         </div>
       </div>
 
-      <div id="analisando" class="hidden">
-        <span class="girando"></span> Conferindo e aguardando o modelo…
+      <div class="busca">
+        <label for="termo" class="rotulo-visivel-leitor">Buscar ou adicionar termo</label>
+        <div class="campo-busca">
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>
+          </svg>
+          <input type="text" id="termo" placeholder="Buscar ou adicionar termo…"
+                 autocomplete="off" spellcheck="false" aria-describedby="aviso-termo">
+        </div>
+        <div id="resultados-busca" class="resultados-busca hidden"></div>
+        <p id="aviso-termo" class="aviso-linha hidden" role="status"></p>
       </div>
-      <div id="resposta-analise" class="hidden"></div>
+
+      <div id="vazio-deteccoes" class="vazio hidden">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect x="11" y="6" width="26" height="34" rx="3"/>
+          <path d="M17 15h14M17 21h14M17 27h8"/>
+          <circle cx="33" cy="34" r="6"/><path d="m37.5 38.5 4 4"/>
+        </svg>
+        <p><strong>Não encontramos dados pessoais.</strong></p>
+        <p>Revise o documento ou adicione termos manualmente no campo acima.</p>
+      </div>
+
+      <div id="lista-categorias" class="categorias"></div>
     </div>
 
-    <details class="bloco limitacoes">
-      <summary>O que a anonimização altera além das tarjas</summary>
-      <ul>
-        <li>Layout, paginação e fontes ficam intactos — não há refluxo.</li>
-        <li>Todos os hyperlinks são removidos, inclusive os inofensivos.</li>
-        <li>O sumário/bookmarks é apagado por inteiro.</li>
-        <li>Metadados são zerados: autor, título, data de criação, produtor.</li>
-        <li>
-          <strong>Assinatura digital é invalidada.</strong> Remover texto muda
-          os bytes assinados; não há contorno. Não testado nesta fase.
-        </li>
-      </ul>
-    </details>
+    <!-- ============================== Ajustes ============================ -->
+    <div id="painel-ajustes" class="painel" role="tabpanel" aria-labelledby="aba-ajustes" hidden>
+      <!-- A6 do goal-fase-2: a escolha entre os dois operadores, com a
+           diferenca dita AQUI, no momento de escolher. A frase de
+           irreversibilidade (RN-01) fica visivel ao lado da escolha; o texto
+           longo foi para "Como funciona?", no mesmo bloco. -->
+      <div class="bloco" id="bloco-modo">
+        <h2 class="rotulo-grupo">Formato de substituição</h2>
+        <div class="cartoes-modo" role="radiogroup" aria-label="Formato de substituição">
+          <label class="cartao-modo">
+            <input type="radio" name="modo" value="tarja" checked>
+            <span class="amostra amostra-tarja" aria-hidden="true"></span>
+            <span class="modo-titulo">Tarja preta</span>
+            <span class="modo-ajuda">Para publicar ou compartilhar com pessoas.</span>
+          </label>
+          <label class="cartao-modo">
+            <input type="radio" name="modo" value="pseudonimo">
+            <span class="amostra amostra-codigo" aria-hidden="true">[P-7F3A]</span>
+            <span class="modo-titulo">Código</span>
+            <span class="modo-ajuda">Para enviar a uma IA; mantém quem é quem.</span>
+          </label>
+        </div>
+        <p class="aviso-irreversivel">
+          Nos dois casos o valor é <strong>removido do arquivo</strong>, e
+          não há mapa guardado para voltar atrás.
+          <button id="btn-como-funciona" class="link-botao" aria-expanded="false"
+                  aria-controls="como-funciona">Como funciona?</button>
+        </p>
+        <div id="como-funciona" class="explicacao hidden">
+          <p>
+            <strong>Tarja preta.</strong> O valor some e o espaço fica coberto.
+            Quem lê o documento não sabe que havia alguém ali, nem se é a mesma
+            pessoa de outro trecho.
+          </p>
+          <p>
+            <strong>Código no lugar.</strong> O valor some e um código ocupa o
+            lugar. Quem lê sabe que havia uma pessoa — e que é a mesma pessoa
+            dos outros trechos. É o formato para mandar o documento a uma
+            análise automatizada.
+          </p>
+          <p>
+            Nos dois casos o valor é <strong>removido do arquivo</strong>. O
+            código é sorteado, não calculado a partir do dado: não existe
+            chave, não há mapa guardado, e
+            <strong>nem nós conseguimos voltar atrás</strong>.
+          </p>
+        </div>
+        <p class="aviso hidden" id="aviso-curtas"></p>
+      </div>
+      <div id="fim-bloco-modo"></div>
+
+      <p class="auxiliar futuro">
+        Perfis de detecção e regras salvas vão ficar aqui.
+      </p>
+    </div>
+
+    <!-- ============================= Exportar ============================ -->
+    <div id="painel-exportar" class="painel" role="tabpanel" aria-labelledby="aba-exportar" hidden>
+
+      <section class="secao">
+        <h2 class="rotulo-grupo">Verificação</h2>
+        <ul id="checklist" class="checklist"></ul>
+        <p class="auxiliar" id="ajuda-verificacao"></p>
+      </section>
+
+      <section class="secao">
+        <h2 class="rotulo-grupo">O que você vai receber</h2>
+        <div class="saidas">
+          <div class="cartao-saida">
+            <label class="saida-linha">
+              <input type="checkbox" id="saida-pdf" checked>
+              <span class="saida-titulo">PDF anonimizado</span>
+            </label>
+            <span class="saida-ajuda">O mesmo documento, com os dados removidos do arquivo.</span>
+          </div>
+
+          <div class="cartao-saida">
+            <label class="saida-linha">
+              <input type="checkbox" id="saida-texto">
+              <span class="saida-titulo">Texto com códigos para IA</span>
+            </label>
+            <span class="saida-ajuda">
+              Uma versão em texto, com um código no lugar de cada dado marcado —
+              em todos, inclusive onde o PDF ficou em tarja. Gerada aqui, sem rede.
+            </span>
+            <button id="btn-previa-texto" class="secundario pequeno">Pré-visualizar texto</button>
+          </div>
+
+          <div class="cartao-saida" id="cartao-ia">
+            <label class="saida-linha">
+              <input type="checkbox" id="saida-ia">
+              <span class="saida-titulo">Enviar para análise por IA</span>
+              <span class="selo-pequeno hidden" id="selo-ia"></span>
+            </label>
+            <span class="saida-ajuda" id="ajuda-ia">
+              Manda o texto com códigos a um modelo externo e mostra a resposta aqui.
+            </span>
+          </div>
+        </div>
+
+        <p class="sugestao hidden" id="sugestao-codigo">
+          Para IA, recomendamos <strong>Código</strong>: ela entende que o mesmo
+          código é a mesma pessoa.
+          <button id="btn-usar-codigo" class="link-botao">Usar Código</button>
+        </p>
+
+        <!-- Texto gerado: leitura, download e falha. -->
+        <div id="texto-falha" class="hidden"></div>
+        <div id="texto-gerado" class="texto-gerado hidden">
+          <p class="auxiliar" id="texto-relatorio"></p>
+          <details class="previa" id="previa-texto">
+            <summary>Ler o texto que será enviado</summary>
+            <pre id="texto-previa"></pre>
+          </details>
+          <a id="link-texto" class="link-download" href="#">Baixar o texto (.txt)</a>
+        </div>
+
+        <!-- Envio a LLM externa (goal-fase-3 §2.9, docs/05 §2.6). So aparece
+             com a saida marcada. O aviso fica ANTES do botao e o botao so
+             destrava com o consentimento marcado, por envio — e o unico
+             caminho do sistema que faz conteudo sair da maquina. -->
+        <div class="bloco-analise hidden" id="bloco-analise">
+          <p class="aviso hidden" id="envio-indisponivel"></p>
+          <div id="envio-externo" class="hidden">
+            <h3 class="subtitulo-bloco">Perguntar a um modelo externo
+              (<span id="analise-modelo"></span>)</h3>
+            <div class="aviso-envio" id="aviso-envio">
+              <p>
+                <strong>Isto não garante que tudo que era dado pessoal foi
+                detectado.</strong>
+                <span id="taxa-nomes"></span>
+                Referências indiretas — <em>“o único servidor cego da
+                repartição”</em> — não são detectadas de forma alguma, e um
+                modelo de IA é justamente bom em reconstruir quem é a pessoa a
+                partir delas. Leia o texto acima antes de enviar.
+              </p>
+              <p>
+                <strong>O envio é irreversível.</strong> O que sair pode ser
+                registrado pelo provedor, e apagar depois não desfaz. Quanto
+                tempo ele guarda depende da configuração da conta no
+                OpenRouter, que esta ferramenta não confere.
+              </p>
+              <p>
+                Antes de sair, o texto passa de novo pela detecção. Se ela
+                achar algo que deveria ter sido substituído, nada é enviado.
+              </p>
+            </div>
+
+            <label for="pergunta" class="rotulo-campo">O que a IA deve analisar?</label>
+            <textarea id="pergunta" rows="3">Resuma este documento, dizendo quem fez o quê.</textarea>
+            <label class="consentimento">
+              <input type="checkbox" id="chk-consentimento">
+              Li o texto e o aviso acima, e quero enviar este documento.
+            </label>
+            <button id="btn-analisar" class="primario largo" disabled>Enviar ao modelo externo</button>
+            <p class="auxiliar hidden" id="envios-anteriores"></p>
+          </div>
+
+          <div id="analisando" class="linha-espera hidden">
+            <span class="girando"></span> Conferindo e aguardando o modelo…
+          </div>
+          <div id="resposta-analise" class="hidden"></div>
+        </div>
+      </section>
+
+      <section class="bloco limitacoes" id="secao-avisos">
+        <h2 class="rotulo-grupo">O que muda além dos dados</h2>
+        <ul id="lista-avisos" class="avisos"></ul>
+      </section>
+
+      <div class="secao acao-final">
+        <button id="btn-gerar" class="primario largo">Gerar e baixar</button>
+        <p class="auxiliar" id="ajuda-aprovar"></p>
+        <div id="resultado" class="hidden" role="status"></div>
+      </div>
+    </div>
   </aside>
 
+  <!-- Conclusão -->
+  <section id="tela-sucesso" class="sucesso-fundo hidden" role="dialog"
+           aria-modal="true" aria-labelledby="sucesso-titulo">
+    <div class="sucesso">
+      <div class="sucesso-icone" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </div>
+      <h2 id="sucesso-titulo">Documento anonimizado</h2>
+      <ul id="sucesso-resumo" class="sucesso-resumo"></ul>
+      <div id="sucesso-downloads" class="sucesso-downloads"></div>
+      <p class="auxiliar">
+        O documento original e a proposta de marcações são apagados do servidor
+        quando você sair desta revisão.
+      </p>
+      <div class="modal-acoes">
+        <button id="proximo-fechar" class="secundario">Continuar revisando</button>
+        <button id="proximo-inicio" class="secundario">Voltar ao início</button>
+        <button id="proximo-novo" class="primario">Anonimizar outro documento</button>
+      </div>
+    </div>
+  </section>
 </main>
 
-<!-- Balão que aparece sobre o texto selecionado, como um menu de contexto. -->
-<div id="balao" class="hidden" role="dialog" aria-label="Ação sobre a seleção">
-  <span id="balao-texto"></span>
-  <button id="balao-tarjar">Tarjar</button>
+<!-- Dica ao passar o mouse sobre uma marcação. -->
+<div id="dica" class="dica hidden" role="tooltip"></div>
+
+<!-- Ações sobre uma marcação. -->
+<div id="popover-marca" class="popover hidden" role="dialog" aria-label="Ações sobre a marcação"></div>
+
+<!-- Ações sobre o texto selecionado no documento. -->
+<div id="balao" class="popover balao hidden" role="dialog" aria-label="Ação sobre a seleção">
+  <div class="balao-texto" id="balao-texto"></div>
+  <button id="balao-todas" class="primario pequeno">Anonimizar em todo o documento</button>
+  <button id="balao-tarjar" class="secundario pequeno">Só este trecho</button>
+</div>
+
+<!-- Atalhos. -->
+<div id="popover-atalhos" class="popover atalhos hidden" role="dialog" aria-label="Atalhos de teclado">
+  <h2 class="rotulo-grupo">Atalhos</h2>
+  <dl>
+    <dt><kbd>J</kbd> <kbd>↓</kbd></dt><dd>Próxima ocorrência</dd>
+    <dt><kbd>K</kbd> <kbd>↑</kbd></dt><dd>Ocorrência anterior</dd>
+    <dt><kbd>Espaço</kbd></dt><dd>Anonimizar ou não a ocorrência em foco</dd>
+    <dt><kbd>Enter</kbd></dt><dd>Ações da ocorrência em foco</dd>
+    <dt><kbd>P</kbd></dt><dd>Ver como ficará</dd>
+    <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Fechar</dd>
+  </dl>
 </div>
 
 <!-- Confirmação de descarte. Substitui o `confirm()` do navegador, que além de
      destoar da interface não permite explicar o que está sendo destruído. -->
-<div id="modal-fundo" class="hidden">
-  <div id="modal" role="alertdialog" aria-modal="true"
+<div id="modal-fundo" class="modal-fundo hidden">
+  <div id="modal" class="modal" role="alertdialog" aria-modal="true"
        aria-labelledby="modal-titulo" aria-describedby="modal-corpo">
-    <h3 id="modal-titulo">Descartar este documento?</h3>
+    <h2 id="modal-titulo">Descartar e apagar este documento?</h2>
     <div id="modal-corpo">
+      <p id="modal-situacao">Nada foi exportado ainda.</p>
       <p>Serão apagados do servidor, agora:</p>
       <ul>
         <li>o PDF original que você enviou</li>
-        <li>a proposta de tarjas e as suas correções</li>
+        <li>a proposta de marcações e as suas correções</li>
         <li>o PDF anonimizado, se já tiver sido gerado</li>
       </ul>
-      <p class="alerta">
-        A ação é irreversível e a sessão não pode ser recuperada. Se ainda não
-        baixou o arquivo anonimizado, ele será perdido.
+      <p class="alerta" id="modal-alerta">
+        A ação é irreversível e a sessão não pode ser recuperada.
       </p>
     </div>
     <div class="modal-acoes">
       <button id="modal-cancelar" class="secundario">Cancelar</button>
       <button id="modal-confirmar" class="perigo">Descartar</button>
-    </div>
-  </div>
-</div>
-
-<!-- Depois do download: o que fazer em seguida. Aparece só quando o arquivo
-     já foi baixado, então descartar a sessão aqui não perde trabalho. -->
-<div id="proximo-fundo" class="hidden">
-  <div id="proximo" role="dialog" aria-modal="true"
-       aria-labelledby="proximo-titulo">
-    <h3 id="proximo-titulo">Download iniciado</h3>
-    <div id="modal-corpo">
-      <p>
-        O PDF anonimizado foi liberado. O documento original e a proposta de
-        tarjas serão apagados do servidor ao sair desta revisão.
-      </p>
-    </div>
-    <div class="modal-acoes">
-      <button id="proximo-fechar" class="secundario">Continuar revisando</button>
-      <button id="proximo-inicio" class="secundario">Voltar ao início</button>
-      <button id="proximo-novo" class="primario-inline">Anonimizar outro</button>
     </div>
   </div>
 </div>

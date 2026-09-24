@@ -196,13 +196,18 @@ def test_clique_em_tarja_manual_remove_em_vez_de_desligar():
     desfazer. Com o tracejado no lugar, a leitura correta é "não saiu".
     """
     js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
-    trecho = re.search(
-        r'caixa\.addEventListener\("click".{0,220}', js, re.S
-    )
-    assert trecho, "o clique na tarja sumiu"
-    corpo = trecho.group()
-    assert "removerSpan" in corpo, "clique em tarja manual precisa remover"
-    assert 'origem === "usuario"' in corpo, "a distinção por origem sumiu"
+    # Desde o redesenho de 2026-09-23 o clique abre as ações da marcação, em
+    # vez de agir direto; a propriedade vive agora em `acoesDaMarca`.
+    clique = re.search(r'caixa\.addEventListener\("click".{0,220}', js, re.S)
+    assert clique, "o clique na marcação sumiu"
+    assert "abrirPopoverMarca" in clique.group()
+
+    acoes = js[js.index("function acoesDaMarca") :]
+    acoes = acoes[: acoes.index("\n}")]
+    manual = acoes[acoes.index('origem === "usuario"') :]
+    manual = manual[: manual.index("return acoes")]
+    assert "removerSpan" in manual, "trecho manual precisa ser removido, não desligado"
+    assert "alternar(" not in manual, "trecho manual não pode oferecer desligar"
 
 
 def test_sessao_sobrevive_a_recarga():
@@ -273,10 +278,65 @@ def test_a_tela_afirma_a_irreversibilidade_no_momento_da_escolha():
     sem que alguém repare no que está mexendo.
     """
     html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
-    bloco = html[html.index('id="bloco-modo"') : html.index('id="titulo-inventario"')]
+    bloco = html[html.index('id="bloco-modo"') : html.index('id="fim-bloco-modo"')]
     assert "removido do arquivo" in bloco
     assert "nem nós conseguimos voltar atrás" in bloco
     assert "não há mapa guardado" in bloco or "não existe chave" in bloco
+
+    # O texto longo foi para "Como funciona?", que nasce fechado. A afirmação
+    # central precisa continuar **visível** ao lado da escolha, não só dentro
+    # de um painel que o usuário talvez nunca abra.
+    visivel = re.search(r'<p class="aviso-irreversivel">(.*?)</p>', bloco, re.S)
+    assert visivel, "a linha visível de irreversibilidade sumiu"
+    assert "removido do arquivo" in visivel.group(1)
+    assert "não há mapa guardado" in re.sub(r"\s+", " ", visivel.group(1))
+
+
+def test_trecho_que_vai_sair_do_pdf_nunca_some_da_tela():
+    """Esconder fragmento de palavra e categoria desligada é limpeza de tela.
+
+    Esconder algo que **vai** sair do PDF seria a tela mentindo sobre o
+    arquivo. A regra de `visivelNoDocumento` decide primeiro por
+    `sera_tarjado`, e só depois olha se é fragmento.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    corpo = js[js.index("function visivelNoDocumento") :]
+    corpo = corpo[: corpo.index("\n}")]
+    assert corpo.index("if (s.sera_tarjado) return true") < corpo.index(
+        "if (s.fragmento) return false"
+    )
+
+
+def test_preverificacao_atrasada_e_descartada():
+    """Resposta que chega depois de outra edição fala de uma proposta que já
+    não existe; mostrá-la seria pendência falsa, ou pior, ok falso."""
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    corpo = js[js.index("async function rodarPreverificacao") :]
+    corpo = corpo[: corpo.index("\n}")]
+    assert "dados.versao === doc.versao" in corpo
+
+
+def test_documento_e_inspetor_rolam_dentro_da_janela():
+    """Regressão achada na captura de tela do redesenho, em 2026-09-23.
+
+    Sem limitar a linha da grade, ela crescia até caber o conteúdo — o
+    contêiner de rolagem de um documento de 3 páginas media 3.778px —, e nem
+    o documento nem o inspetor rolavam: ficavam cortados na borda da janela.
+    Nada quebrava, nenhum erro aparecia; só não dava para chegar à página 2.
+    """
+    css = (ESTATICOS / "estilo.css").read_text(encoding="utf-8")
+    regra = re.search(r"#tela-revisao\s*\{[^}]*\}", css).group()
+    assert "grid-template-rows: minmax(0, 1fr)" in regra
+    assert re.search(r"#tela-revisao > \*\s*\{\s*min-height: 0", css)
+
+
+def test_etapas_sao_dados():
+    """A etapa de análise por IA entra como uma linha, sem refazer o layout."""
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert "const ETAPAS = [" in js
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    assert 'id="etapas"' in html
+    assert "Revisar</" not in html, "as etapas voltaram a ser marcação fixa"
 
 
 def test_o_texto_dos_vetores_acompanha_o_modo():
