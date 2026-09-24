@@ -176,6 +176,9 @@ class Sessao:
     caracteristicas: dict = field(default_factory=dict)
     # Último resultado da pré-verificação, com a versão a que se refere.
     _previa: tuple[int, dict] | None = field(default=None, repr=False)
+    # Marcada por `Sessoes.remover` **antes** de apagar a pasta, para quem
+    # ainda estiver trabalhando nela saber que o erro seguinte é encerramento.
+    encerrada: bool = False
     # Alocador de token **da sessão**, não de cada artefato.
     #
     # Criar um por chamada faria o mesmo nome virar `[P-7F3A]` no PDF e
@@ -845,7 +848,17 @@ class Sessao:
         saida = self.pasta / f"previa-{secrets.token_hex(6)}.pdf"
         try:
             rel = self._redigir_e_verificar(ativos, saida)
-        except PseudonimoImpossivelNoPDF as exc:
+        except Exception as exc:
+            # Descartar o documento enquanto a pré-verificação roda apaga a
+            # pasta no meio da redação. Não é defeito — o usuário encerrou a
+            # sessão —, e não pode virar 500.
+            # `encerrada`, e não "a pasta existe?": o `rmtree` apaga os
+            # arquivos antes do diretório, e a pergunta pela pasta perdia a
+            # corrida — medido em 2026-09-23, ainda dava 500.
+            if self.encerrada or not self.pasta.exists():
+                raise SessaoEncerrada(self.doc_id) from exc
+            if not isinstance(exc, PseudonimoImpossivelNoPDF):
+                raise
             # A mesma trava da aprovação: as duas medidas de largura
             # discordaram. A mensagem carrega token e larguras, não o valor.
             return {**base, "ok": False, "erro": str(exc), "total_vazamentos": 0,
@@ -1245,6 +1258,24 @@ class Sessao:
         }
 
 
+class SessaoEncerrada(RuntimeError):
+    """A sessão foi apagada enquanto uma operação sobre ela rodava."""
+
+
+class DocumentoIlegivel(ValueError):
+    """O arquivo não abre como PDF. Nada foi gravado em disco."""
+
+
+class PdfProtegido(DocumentoIlegivel):
+    """PDF com senha de abertura. Nada foi gravado em disco.
+
+    Não há campo de senha: abrir o arquivo com a senha do usuário exigiria
+    guardá-la ou pedi-la a cada leitura, e o redator ainda teria de decidir o
+    que fazer com a criptografia na saída. Até isso ser decidido, a resposta
+    honesta é recusar e dizer como resolver.
+    """
+
+
 class Sessoes:
     """Registro em memória, com expiração e apagamento explícito.
 
@@ -1286,9 +1317,33 @@ class Sessoes:
         return len(vencidas)
 
     def criar(self, nome_arquivo: str, dados: bytes) -> Sessao:
+        # Abre em memória **antes** de gravar. Medido em 2026-09-23: um PDF
+        # com senha passava pelo `%PDF`, era gravado, e o `build_text_map`
+        # estourava — 500 para o usuário e o original em claro numa pasta que
+        # nenhuma sessão registrava. Sem registro, nem TTL nem `DELETE` a
+        # alcançavam; só a varredura da próxima subida. Invariante 9.
+        try:
+            teste = fitz.open(stream=dados, filetype="pdf")
+        except Exception as exc:  # noqa: BLE001 — qualquer falha é "ilegível"
+            raise DocumentoIlegivel("não foi possível ler este arquivo como PDF") from exc
+        try:
+            if teste.needs_pass:
+                raise PdfProtegido("este PDF está protegido por senha")
+        finally:
+            teste.close()
+
         doc_id = secrets.token_urlsafe(9)
         pasta = self.raiz / doc_id
         pasta.mkdir(parents=True, exist_ok=True)
+        try:
+            return self._registrar(doc_id, pasta, nome_arquivo, dados)
+        except BaseException:
+            # O que falhar daqui em diante não pode deixar o original em disco
+            # fora de uma sessão registrada.
+            shutil.rmtree(pasta, ignore_errors=True)
+            raise
+
+    def _registrar(self, doc_id: str, pasta: Path, nome_arquivo: str, dados: bytes) -> Sessao:
         original = pasta / "original.pdf"
         original.write_bytes(dados)
 
@@ -1335,6 +1390,7 @@ class Sessoes:
             sessao = self._itens.pop(doc_id, None)
         if not sessao:
             return False
+        sessao.encerrada = True
         shutil.rmtree(sessao.pasta, ignore_errors=True)
         logger.info("sessao %s removida, arquivos apagados", doc_id)
         return True
@@ -1358,13 +1414,21 @@ def _caracteristicas(doc: fitz.Document) -> dict:
     except Exception:  # noqa: BLE001 — PDF estranho não pode derrubar o upload
         assinatura = False
     links = 0
-    for pagina in doc:
+    sem_texto: list[int] = []
+    for i, pagina in enumerate(doc):
         links += len(pagina.get_links())
+        # Página sem texto extraível é quase sempre digitalização: a detecção
+        # não a leu, e o revisor precisa saber disso **antes** de aprovar —
+        # um documento parcialmente escaneado passa pelo gate com a parte
+        # escaneada intacta, porque não há texto para o verificador achar.
+        if not pagina.get_text().strip():
+            sem_texto.append(i + 1)
     return {
         "assinatura": assinatura,
         "links": links,
         "marcadores": len(doc.get_toc(simple=True)),
         "anexos": doc.embfile_count(),
+        "paginas_sem_texto": sem_texto,
     }
 
 

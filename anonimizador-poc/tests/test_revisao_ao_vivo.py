@@ -277,3 +277,20 @@ def test_caracteristicas_do_pdf_de_origem(cliente, monkeypatch, tmp_path):
     assert c["links"] == 1
     assert c["marcadores"] == 1
     assert c["assinatura"] is False
+
+
+def test_preverificacao_de_sessao_descartada_no_meio_responde_410(cliente, monkeypatch, tmp_path):
+    """Descartar durante a pré-verificação apaga a pasta no meio da redação.
+
+    Achado em 2026-09-23 exercitando a tela: virava 500 com traceback. O
+    usuário encerrou a sessão de propósito; a resposta certa é "encerrada".
+    """
+    import shutil
+
+    caminho = _pdf(tmp_path, [["Contratante: Mariana Aparecida Souza."]])
+    doc = _subir(cliente, monkeypatch, caminho, [("Mariana Aparecida Souza", "PERSON")])
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    shutil.rmtree(sessao.pasta)
+
+    r = cliente.post(f"/api/doc/{doc['doc_id']}/preverificar")
+    assert r.status_code == 410

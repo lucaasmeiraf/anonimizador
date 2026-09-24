@@ -87,10 +87,12 @@ const NOMES_VETORES = {
   "tokens-presentes": "Todo código foi escrito",
 };
 
-/* As etapas são dados, não marcação. A análise por IA entra como uma quarta
- * linha aqui — `{ id: "analisar", rotulo: "Analisar com IA" }` — com a regra
- * de status dela em `statusDaEtapa`, sem mexer no layout. */
+/* As etapas são dados, não marcação — o mesmo componente na tela inicial e
+ * na revisão. A análise por IA entra como mais uma linha aqui —
+ * `{ id: "analisar", rotulo: "Analisar com IA" }` — com a regra de status
+ * dela em `statusDaEtapa`, sem mexer no layout. */
 const ETAPAS = [
+  { id: "enviar", rotulo: "Enviar" },
   { id: "revisar", rotulo: "Revisar" },
   { id: "verificar", rotulo: "Verificar" },
   { id: "exportar", rotulo: "Exportar" },
@@ -113,137 +115,368 @@ const estado = {
   exportou: false, // algum arquivo desta revisão já foi baixado
 };
 
-// ---------------------------------------------------------------- upload
+// ------------------------------------------------------------ tela inicial
+/* O que a tela inicial sabe do servidor: o limite de tamanho e os tipos que a
+ * detecção procura. Vêm de `/api/saude`, não de uma cópia escrita aqui que
+ * envelhece quando a configuração muda. */
+let limiteMb = 50;
+
+/* Os tipos na ordem em que o prompt de desenho os lista; o resto vai para o
+ * chip "+N". "Nomes" e não "Pessoas": na tela inicial o usuário pensa no que
+ * está escrito no documento, não na categoria. */
+const ORDEM_CHIPS = [
+  "PERSON", "CPF", "RG", "CNH", "CNS", "EMAIL", "TELEFONE", "CEP", "DATE_TIME", "ENDERECO",
+];
+const MAX_CHIPS = 10;
+
+function nomeDoChip(entidade) {
+  if (entidade === "PERSON") return "Nomes";
+  if (entidade === "CNS") return "Cartão SUS";
+  return categoria(entidade).nome;
+}
+
+function montarChips(tipos) {
+  const ul = $("chips-tipos");
+  ul.innerHTML = "";
+  const ordenados = [
+    ...ORDEM_CHIPS.filter((e) => tipos.includes(e)),
+    ...tipos.filter((e) => !ORDEM_CHIPS.includes(e)),
+  ];
+  const chip = (texto, cor) => {
+    const li = document.createElement("li");
+    li.className = `chip cat-${cor}`;
+    const b = document.createElement("span");
+    b.className = "bolinha";
+    b.setAttribute("aria-hidden", "true");
+    li.append(b, document.createTextNode(texto));
+    return li;
+  };
+  for (const e of ordenados.slice(0, MAX_CHIPS)) ul.appendChild(chip(nomeDoChip(e), categoria(e).cor));
+  const resto = ordenados.slice(MAX_CHIPS);
+  if (resto.length) {
+    const li = document.createElement("li");
+    li.className = "chip chip-mais";
+    li.tabIndex = 0;
+    li.textContent = `+${resto.length}`;
+    const lista = resto.map(nomeDoChip).join(", ");
+    li.title = lista;
+    li.setAttribute("aria-label", `e mais ${resto.length}: ${lista}`);
+    ul.appendChild(li);
+  }
+
+  // A lista completa, com o que nasce preservado, fica na gaveta.
+  const completa = $("lista-tipos-completa");
+  completa.innerHTML = "";
+  for (const e of ordenados) {
+    const li = document.createElement("li");
+    li.textContent = nomeDoChip(e);
+    completa.appendChild(li);
+  }
+}
+
+function montarCamadas() {
+  const ul = $("lista-camadas");
+  ul.innerHTML = "";
+  // As camadas do PDF: "texto" é o vetor do artefato de texto, não do PDF, e
+  // a presença do código só existe quando há código no lugar.
+  for (const [vetor, nome] of Object.entries(NOMES_VETORES)) {
+    if (vetor === "texto") continue;
+    const li = document.createElement("li");
+    li.textContent = vetor === "tokens-presentes" ? `${nome} (com código)` : nome;
+    ul.appendChild(li);
+  }
+}
+
+// Qual modelo está detectando — muda o que esperar da revisão, e muda o que o
+// aviso de envio externo pode afirmar sobre nomes que escapam.
+let nerAtivo = null;
+montarChips(Object.keys(CATEGORIAS).filter((e) => e !== "MANUAL"));
+montarCamadas();
+fetch("/api/saude")
+  .then((r) => (r.ok ? r.json() : null))
+  .then((d) => {
+    if (!d) return;
+    nerAtivo = d.ner;
+    $("detalhe-modelo").textContent = d.ner;
+    if (Array.isArray(d.tipos) && d.tipos.length) montarChips(d.tipos);
+    if (d.limite_mb) {
+      limiteMb = d.limite_mb;
+      $("limite-mb").textContent = limiteMb;
+    }
+  })
+  .catch(() => {});
+
+function naTelaInicial() {
+  return !$("tela-upload").classList.contains("hidden");
+}
+
+function abrirSeletor() {
+  $("arquivo").value = "";
+  $("arquivo").click();
+}
+
+$("btn-selecionar").addEventListener("click", (e) => {
+  e.stopPropagation();
+  abrirSeletor();
+});
+// A área inteira é alvo de clique; o teclado usa o botão, que é focável.
+$("zona").addEventListener("click", abrirSeletor);
+$("btn-outro").addEventListener("click", () => {
+  mostrarEstadoEnvio("ocioso");
+  abrirSeletor();
+});
+$("btn-trocar").addEventListener("click", () => {
+  cancelarEnvio();
+  abrirSeletor();
+});
+$("btn-cancelar").addEventListener("click", cancelarEnvio);
+
 $("arquivo").addEventListener("change", (ev) => {
   if (ev.target.files[0]) enviarArquivo(ev.target.files[0]);
 });
 
-/* Arrastar e soltar.
+/* Soltar em qualquer ponto da janela.
  *
- * `dragover` precisa de preventDefault ou o navegador abre o PDF numa aba e
- * o usuário perde a tela. Os contadores de entrada/saída evitam o piscar
- * clássico: passar sobre um filho dispara `dragleave` no pai. */
+ * `dragover` precisa de preventDefault em toda a janela, nas duas telas, ou o
+ * navegador abre o PDF numa aba e o usuário perde a revisão. O overlay só
+ * aparece na tela inicial. O contador evita o piscar clássico: passar sobre
+ * um filho dispara `dragleave` no pai. */
 (() => {
-  const zona = $("zona");
   let profundidade = 0;
-
-  const parar = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const temArquivo = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  const mostrar = (sim) => {
+    $("soltar-overlay").classList.toggle("hidden", !sim);
+    $("zona").classList.toggle("arrastando", sim);
   };
 
-  ["dragenter", "dragover", "dragleave", "drop"].forEach((evt) =>
-    zona.addEventListener(evt, parar)
-  );
-
-  zona.addEventListener("dragenter", () => {
+  window.addEventListener("dragenter", (e) => {
+    e.preventDefault();
+    if (!naTelaInicial() || !temArquivo(e) || envioAtual) return;
     profundidade += 1;
-    zona.classList.add("arrastando");
+    mostrar(true);
   });
-
-  zona.addEventListener("dragleave", () => {
-    profundidade -= 1;
-    if (profundidade <= 0) zona.classList.remove("arrastando");
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    profundidade = Math.max(0, profundidade - 1);
+    if (profundidade === 0) mostrar(false);
   });
-
-  zona.addEventListener("drop", (e) => {
+  window.addEventListener("drop", (e) => {
+    e.preventDefault();
     profundidade = 0;
-    zona.classList.remove("arrastando");
-    const arquivo = e.dataTransfer.files[0];
+    mostrar(false);
+    if (!naTelaInicial() || envioAtual) return;
+    const arquivo = e.dataTransfer?.files?.[0];
     if (arquivo) enviarArquivo(arquivo);
   });
-
-  // Soltar fora da zona não pode navegar para o arquivo.
-  ["dragover", "drop"].forEach((evt) =>
-    window.addEventListener(evt, (e) => e.preventDefault())
-  );
 })();
 
-/* Etapas do carregamento: só as que existem de fato. O envio tem progresso
- * medido; extração e detecção acontecem numa única chamada ao servidor, e
- * separá-las na tela seria inventar uma barra. */
+// Ctrl+V com um PDF copiado, e Ctrl+O para escolher — só na tela inicial.
+document.addEventListener("paste", (e) => {
+  if (!naTelaInicial() || envioAtual) return;
+  const arquivo = [...(e.clipboardData?.files || [])][0];
+  if (arquivo) {
+    e.preventDefault();
+    enviarArquivo(arquivo);
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (!naTelaInicial() || modalAberto) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === "o" || e.key === "O")) {
+    e.preventDefault();
+    if (!envioAtual) abrirSeletor();
+  }
+});
+
+/* Um estado de cada vez dentro do cartão: ocioso (área de soltar),
+ * processando (arquivo + etapas) ou erro (mensagem + "Escolher outro"). */
+function mostrarEstadoEnvio(qual) {
+  $("zona").classList.toggle("hidden", qual !== "ocioso");
+  $("arquivo-escolhido").classList.toggle("hidden", qual !== "processando");
+  $("carregando-upload").classList.toggle("hidden", qual !== "processando");
+  $("erro-upload").classList.toggle("hidden", qual !== "erro");
+  $("objetivo").disabled = qual === "processando";
+}
+
+/* Erro dentro do cartão, sem modal. `alerta` (âmbar) é para o que não é erro
+ * do usuário nem do sistema — o arquivo só não é do tipo que dá para tratar. */
+function mostrarErroEnvio(titulo, detalhe, alerta = false) {
+  $("erro-titulo").textContent = titulo;
+  $("erro-detalhe").textContent = detalhe;
+  $("erro-upload").classList.toggle("alerta", alerta);
+  mostrarEstadoEnvio("erro");
+}
+
+/* Etapas do processamento: só as que existem de fato. A leitura do arquivo
+ * tem progresso medido; extração e detecção acontecem numa única chamada ao
+ * servidor, e separá-las na tela seria inventar em que ponto uma acaba. */
 function marcarEtapaUpload(atual) {
   const ordem = ["etapa-envio", "etapa-deteccao", "etapa-pronto"];
   const i = ordem.indexOf(atual);
   ordem.forEach((id, j) => {
-    $(id).dataset.status = j < i ? "feito" : j === i ? "atual" : "futuro";
+    const st = j < i ? "feito" : j === i ? "atual" : "futuro";
+    $(id).dataset.status = st;
+    $(id).querySelector(".marca-etapa").innerHTML =
+      st === "feito" ? icone("check") : st === "atual" ? '<span class="girando"></span>' : "";
   });
 }
 
+/* O envio em andamento. Cancelar **não** aborta a requisição depois que o
+ * arquivo já subiu: o servidor terminaria a detecção e criaria uma sessão que
+ * ninguém mais alcança, com o original em disco até o TTL. Em vez disso a tela
+ * volta ao início na hora, e quando a resposta chegar a sessão é apagada. */
+let envioAtual = null;
+
+function cancelarEnvio() {
+  if (!envioAtual) return;
+  const e = envioAtual;
+  e.cancelado = true;
+  envioAtual = null;
+  if (!e.subiu) e.xhr.abort(); // ainda subindo: o servidor não criou nada
+  // Sem limpar, escolher o mesmo arquivo de novo não dispara `change`.
+  $("arquivo").value = "";
+  mostrarEstadoEnvio("ocioso");
+}
+
 function enviarArquivo(arquivo) {
-  const erro = $("erro-upload");
-  erro.classList.add("hidden");
-  erro.classList.remove("escaneado");
+  if (envioAtual) return;
 
   // Recusa antes de subir: erra rápido e não gasta a viagem.
   if (!/\.pdf$/i.test(arquivo.name) && arquivo.type !== "application/pdf") {
-    erro.textContent = "Só PDF nesta fase.";
-    erro.classList.remove("hidden");
-    return;
+    return mostrarErroEnvio("Esse arquivo não é um PDF.", `“${arquivo.name}” não pode ser anonimizado aqui.`);
+  }
+  if (arquivo.size > limiteMb * 1024 * 1024) {
+    return mostrarErroEnvio(
+      `Esse arquivo tem ${formatarTamanho(arquivo.size)}. O limite é ${limiteMb} MB.`,
+      "Divida o documento ou envie uma versão menor."
+    );
+  }
+  if (arquivo.size === 0) {
+    return mostrarErroEnvio("Esse arquivo está vazio.", "Escolha outro PDF.");
   }
 
-  $("carregando-upload").classList.remove("hidden");
-  $("zona").classList.add("hidden");
-  $("progresso-titulo").textContent = "Enviando o arquivo…";
-  $("progresso-sub").textContent = `${arquivo.name} · ${formatarTamanho(arquivo.size)}`;
+  $("arquivo-nome").textContent = arquivo.name;
+  $("arquivo-meta").textContent = formatarTamanho(arquivo.size);
   $("envio-pct").textContent = "";
   marcarEtapaUpload("etapa-envio");
+  mostrarEstadoEnvio("processando");
 
+  const objetivo = document.querySelector('input[name="objetivo"]:checked')?.value || "publicar";
   const corpo = new FormData();
   corpo.append("arquivo", arquivo);
 
   // XHR e não fetch: é o único jeito de ter progresso real do envio.
   const xhr = new XMLHttpRequest();
+  const este = { xhr, cancelado: false, subiu: false };
+  envioAtual = este;
   xhr.open("POST", "/api/doc");
   xhr.upload.addEventListener("progress", (e) => {
-    if (e.lengthComputable) {
+    if (e.lengthComputable && !este.cancelado) {
       $("envio-pct").textContent = `${Math.round((100 * e.loaded) / e.total)}%`;
     }
   });
   xhr.upload.addEventListener("load", () => {
-    marcarEtapaUpload("etapa-deteccao");
-    $("progresso-titulo").textContent = "Extraindo texto e detectando dados…";
+    este.subiu = true;
+    if (!este.cancelado) marcarEtapaUpload("etapa-deteccao");
   });
 
-  const terminar = () => {
-    $("carregando-upload").classList.add("hidden");
+  const falhar = (status, detalhe) => {
+    envioAtual = null;
     $("arquivo").value = "";
-  };
-  const falhar = (mensagem, escaneado = false) => {
-    terminar();
-    if (escaneado) {
-      erro.classList.add("escaneado");
-      erro.innerHTML =
-        "<strong>Este PDF não tem texto selecionável.</strong>" +
-        "Provavelmente é uma digitalização. A detecção depende de OCR, que " +
-        "ainda não existe nesta ferramenta — nada foi processado nem guardado.";
-    } else {
-      erro.textContent = mensagem;
+    if (status === 422 && /escaneado|texto extra/i.test(detalhe)) {
+      return mostrarErroEnvio(
+        "Este PDF é uma imagem digitalizada e não tem texto para remover.",
+        "Por enquanto só aceitamos PDFs com texto selecionável. Nada foi guardado.",
+        true
+      );
     }
-    erro.classList.remove("hidden");
-    $("zona").classList.remove("hidden");
+    if (status === 422 && /senha/i.test(detalhe)) {
+      return mostrarErroEnvio(
+        "Este PDF está protegido por senha.",
+        "Abra-o no leitor de PDF, salve uma cópia sem a proteção e envie essa cópia. Nada foi guardado.",
+        true
+      );
+    }
+    if (status === 413) {
+      return mostrarErroEnvio(`Esse arquivo passa do limite de ${limiteMb} MB.`, "Divida o documento ou envie uma versão menor.");
+    }
+    if (status === 415) {
+      return mostrarErroEnvio("Esse arquivo não é um PDF.", "Escolha um arquivo .pdf.");
+    }
+    mostrarErroEnvio("Não foi possível processar o arquivo.", detalhe);
   };
 
-  xhr.addEventListener("load", () => {
+  xhr.addEventListener("load", async () => {
     let dados = null;
     try {
       dados = JSON.parse(xhr.responseText);
     } catch {
       /* resposta sem JSON: cai na mensagem genérica abaixo */
     }
-    if (xhr.status !== 200 || !dados) {
-      const detalhe = (dados && dados.detail) || "falha no envio";
-      return falhar(detalhe, xhr.status === 422 && /escaneado/i.test(detalhe));
+    if (este.cancelado) {
+      // A sessão nasceu depois de o usuário desistir: apaga agora, em vez de
+      // deixar o original em disco até o TTL.
+      if (dados && dados.doc_id) fetch(`/api/doc/${dados.doc_id}`, { method: "DELETE" }).catch(() => {});
+      return;
     }
+    if (xhr.status !== 200 || !dados) {
+      const d = dados && dados.detail;
+      return falhar(xhr.status, typeof d === "string" ? d : "falha no envio");
+    }
+
+    // Preparando a revisão: o formato escolhido e a primeira página.
     marcarEtapaUpload("etapa-pronto");
-    terminar();
-    doc = dados;
+    const n = dados.paginas.length;
+    $("arquivo-meta").textContent =
+      `${formatarTamanho(arquivo.size)} · ${n} ${n === 1 ? "página" : "páginas"}`;
+    // `doc` só é preenchido quando a revisão monta: antes disso, os atalhos e
+    // os redesenhos da revisão veriam um documento sem tela.
+    let novo = dados;
+    try {
+      // O objetivo só pré-define o formato; a revisão pode trocá-lo. Vai pelo
+      // mesmo caminho do seletor da aba Ajustes (`PUT /perfil`).
+      if (objetivo === "ia") {
+        const r = await fetch(`/api/doc/${novo.doc_id}/perfil`, {
+          method: "PUT",
+          ...JSON_(corpoDoModo("pseudonimo", novo.perfil)),
+        });
+        if (r.ok) novo = await r.json();
+      }
+    } catch {
+      /* formato não aplicado: a revisão abre em tarja, e o seletor está lá */
+    }
+    await carregarImagem(`/api/doc/${novo.doc_id}/pagina/0.png?escala=${ESCALA}`);
+    envioAtual = null;
+    if (este.cancelado) {
+      // Cancelou enquanto a revisão era preparada: a sessão já existe.
+      fetch(`/api/doc/${novo.doc_id}`, { method: "DELETE" }).catch(() => {});
+      return;
+    }
+    doc = novo;
+    $("arquivo").value = "";
     estado.exportou = false;
     lembrarSessao(doc.doc_id);
     montarRevisao();
+    mostrarEstadoEnvio("ocioso");
   });
-  xhr.addEventListener("error", () => falhar("não foi possível falar com o servidor"));
+  xhr.addEventListener("error", () => {
+    if (!este.cancelado) falhar(0, "não foi possível falar com o servidor");
+  });
+  xhr.addEventListener("abort", () => {
+    if (envioAtual === este) envioAtual = null;
+  });
   xhr.send(corpo);
+}
+
+/* Espera a primeira página chegar, para a revisão abrir com o documento na
+ * tela e não com um retângulo em branco. Falhar aqui não impede nada. */
+function carregarImagem(url) {
+  return new Promise((ok) => {
+    const img = new Image();
+    img.onload = img.onerror = () => ok();
+    img.src = url;
+    setTimeout(ok, 8000);
+  });
 }
 
 function formatarTamanho(bytes) {
@@ -252,19 +485,10 @@ function formatarTamanho(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Qual modelo está detectando — muda o que esperar da revisão, e muda o que o
-// aviso de envio externo pode afirmar sobre nomes que escapam.
-let nerAtivo = null;
-fetch("/api/saude")
-  .then((r) => (r.ok ? r.json() : null))
-  .then((d) => {
-    if (d) {
-      nerAtivo = d.ner;
-      $("modelo-ativo").textContent =
-        `Detecção por ${d.ner}, ${d.entidades} tipos de dado.`;
-    }
-  })
-  .catch(() => {});
+// Gaveta "Como garantimos isso".
+const gavetaFundo = $("gaveta-fundo");
+$("btn-como-garantimos").addEventListener("click", () => abrirModalEl(gavetaFundo, $("btn-fechar-gaveta")));
+$("btn-fechar-gaveta").addEventListener("click", () => fecharModalEl(gavetaFundo));
 
 // O **envio** a modelo externo só é oferecido se o serviço `analise` está no
 // ar e tem chave. Com `make ui` ele não sobe, e um botão que só devolve erro
@@ -352,6 +576,7 @@ async function restaurarSessao() {
   }
 }
 
+montarEtapas();
 restaurarSessao();
 
 // --------------------------------------------------------------- montagem
@@ -359,8 +584,7 @@ function montarRevisao() {
   $("tela-upload").classList.add("hidden");
   $("tela-revisao").classList.remove("hidden");
   $("cabecalho-doc").classList.remove("hidden");
-  $("etapas").classList.remove("hidden");
-  $("topo-acoes").classList.remove("hidden");
+  $("btn-principal").classList.remove("hidden");
   $("nome-arquivo").textContent = doc.nome_arquivo;
   $("btn-arquivo").title = doc.nome_arquivo;
   document.title = `${doc.nome_arquivo} — Anonimizador`;
@@ -722,6 +946,26 @@ function redesenhar() {
   atualizarVerificacao();
   montarAvisos();
   atualizarSaidas();
+  avisarPaginasSemTexto();
+}
+
+/* Documento parcialmente escaneado. A detecção não leu essas páginas, e a
+ * verificação também não tem texto nelas para conferir: o que estiver
+ * escrito ali passa intacto. O revisor precisa saber disso durante a
+ * revisão, não descobrir depois de publicar. */
+function textoPaginasSemTexto() {
+  const sem = (doc.caracteristicas && doc.caracteristicas.paginas_sem_texto) || [];
+  if (!sem.length) return "";
+  const lista = sem.length > 6 ? `${sem.slice(0, 6).join(", ")}…` : sem.join(", ");
+  return sem.length === 1
+    ? `1 página sem texto não pôde ser analisada (página ${lista}). O que estiver escrito nela como imagem não será removido.`
+    : `${sem.length} páginas sem texto não puderam ser analisadas (páginas ${lista}). O que estiver escrito nelas como imagem não será removido.`;
+}
+
+function avisarPaginasSemTexto() {
+  const texto = textoPaginasSemTexto();
+  $("aviso-sem-texto").textContent = texto;
+  $("aviso-sem-texto").classList.toggle("hidden", !texto);
 }
 
 function destinoDe(s) {
@@ -1339,15 +1583,18 @@ async function trocarModo(modo) {
   // Toda entidade que já sai do documento passa a sair pelo novo operador; o
   // que estava em `manter` continua em `manter`. Trocar o modo não é redecidir
   // o que é sensível — é decidir o que fica no lugar.
+  doc = await enviar("/perfil", { method: "PUT", ...JSON_(corpoDoModo(modo)) });
+  aposEdicao();
+}
+
+/* O perfil com `modo` no lugar de todo operador que remove. Usado também pela
+ * tela inicial, quando o objetivo escolhido é "enviar para análise por IA". */
+function corpoDoModo(modo, perfil = doc.perfil) {
   const regras = {};
-  for (const [entidade, op] of Object.entries(doc.perfil.regras || {})) {
+  for (const [entidade, op] of Object.entries(perfil.regras || {})) {
     regras[entidade] = op === "manter" ? "manter" : modo;
   }
-  doc = await enviar("/perfil", {
-    method: "PUT",
-    ...JSON_({ nome: "personalizado", padrao: modo, regras }),
-  });
-  aposEdicao();
+  return { nome: "personalizado", padrao: modo, regras };
 }
 
 async function alternarManuais(ligar) {
@@ -1738,7 +1985,7 @@ async function rodarPreverificacao() {
       } else {
         preDeNovo = true;
       }
-    } else if (r.status !== 404) {
+    } else if (r.status !== 404 && r.status !== 410) {
       estado.previa = { versao: doc.versao, erro: `a verificação falhou (${r.status})` };
     }
   } catch {
@@ -1886,6 +2133,9 @@ function cartaoOcorrencia(o) {
 
 // ---------------------------------------------------------------- etapas
 function statusDaEtapa(id) {
+  // Tela inicial: só "Enviar" existe ainda; o resto é o caminho à frente.
+  if (!doc) return id === "enviar" ? "atual" : "futuro";
+  if (id === "enviar") return "feito";
   const p = previaAtual();
   if (id === "revisar") return estado.aba === "exportar" || estado.sucesso ? "feito" : "atual";
   if (id === "verificar") {
@@ -1918,6 +2168,8 @@ function montarEtapas() {
     rot.textContent = etapa.rotulo;
     b.append(numero, rot);
     b.setAttribute("aria-label", `${i + 1}. ${etapa.rotulo}`);
+    // Sem documento, as etapas só mostram o caminho: não há para onde ir.
+    b.disabled = !doc;
     b.addEventListener("click", () => irParaEtapa(etapa.id));
     li.appendChild(b);
     ol.appendChild(li);
@@ -1925,6 +2177,8 @@ function montarEtapas() {
 }
 
 function irParaEtapa(id) {
+  // Voltar a "Enviar" é trocar de documento: descarta este, com confirmação.
+  if (id === "enviar") return abrirModal(() => abrirSeletor());
   if (id === "revisar") selecionarAba("deteccoes");
   if (id === "verificar") {
     selecionarAba("deteccoes");
@@ -2065,6 +2319,9 @@ function montarAvisos() {
     li.appendChild(t);
     ul.appendChild(li);
   };
+  if ((c.paginas_sem_texto || []).length) {
+    item(escapar(textoPaginasSemTexto()), true, "alerta");
+  }
   if (c.assinatura) {
     item(
       "<strong>A assinatura digital será invalidada.</strong> Remover texto muda " +
@@ -2740,15 +2997,14 @@ function voltarAoInicio() {
   $("saida-ia").checked = false;
   limparResultado();
   limparAnalise();
-  document.title = "Anonimizador — revisão";
+  document.title = "Anonimizador";
 
   $("tela-revisao").classList.add("hidden");
   $("cabecalho-doc").classList.add("hidden");
-  $("etapas").classList.add("hidden");
-  $("topo-acoes").classList.add("hidden");
+  $("btn-principal").classList.add("hidden");
+  montarEtapas();
   $("tela-upload").classList.remove("hidden");
-  $("zona").classList.remove("hidden");
-  $("erro-upload").classList.add("hidden");
+  mostrarEstadoEnvio("ocioso");
   $("arquivo").value = "";
   window.scrollTo(0, 0);
 }

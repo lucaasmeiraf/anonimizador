@@ -27,7 +27,15 @@ from .. import config
 from ..pipeline import DetectionPipeline
 from ..pdf_redactor import PseudonimoImpossivelNoPDF
 from ..politica import PerfilPolitica, PoliticaInvalida
-from .sessao import Sessao, Sessoes, SpanUI, perfil_padrao
+from .sessao import (
+    DocumentoIlegivel,
+    PdfProtegido,
+    Sessao,
+    SessaoEncerrada,
+    Sessoes,
+    SpanUI,
+    perfil_padrao,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,7 +109,16 @@ async def criar_doc(arquivo: UploadFile = File(...)) -> dict:
     if not dados.startswith(b"%PDF"):
         raise HTTPException(415, "só PDF nesta fase")
 
-    sessao = sessoes.criar(arquivo.filename or "documento.pdf", dados)
+    try:
+        sessao = sessoes.criar(arquivo.filename or "documento.pdf", dados)
+    except PdfProtegido as exc:
+        raise HTTPException(
+            422,
+            "este PDF está protegido por senha; remova a proteção (salve uma "
+            "cópia sem senha no leitor de PDF) e envie de novo",
+        ) from exc
+    except DocumentoIlegivel as exc:
+        raise HTTPException(422, "não foi possível ler este arquivo como PDF") from exc
     sessao.perfil = perfil_padrao()
 
     if not sessao.tm.text.strip():
@@ -398,7 +415,10 @@ def preverificar(sessao: Sessao = Depends(pegar_sessao)) -> dict:
     Não devolve arquivo nem aprova nada: o PDF de prova é apagado antes da
     resposta, e baixar continua exigindo `/aprovar`. Ver `Sessao.preverificar`.
     """
-    return sessao.preverificar()
+    try:
+        return sessao.preverificar()
+    except SessaoEncerrada as exc:
+        raise HTTPException(410, "sessão encerrada") from exc
 
 
 @app.get("/api/doc/{doc_id}/download")
@@ -557,7 +577,15 @@ def raiz() -> HTMLResponse:
 
 @app.get("/api/saude")
 def saude() -> dict:
-    return {"ok": True, "ner": config.NER_PADRAO, "entidades": len(config.ENTIDADES_ATIVAS)}
+    return {
+        "ok": True,
+        "ner": config.NER_PADRAO,
+        "entidades": len(config.ENTIDADES_ATIVAS),
+        # A tela inicial mostra os tipos e o limite reais, não uma cópia
+        # escrita à mão que envelhece quando a configuração muda.
+        "tipos": list(config.ENTIDADES_ATIVAS),
+        "limite_mb": MAX_BYTES // (1024 * 1024),
+    }
 
 
 @app.get("/api/analise/saude")

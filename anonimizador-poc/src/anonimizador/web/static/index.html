@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Anonimizador — revisão</title>
+<title>Anonimizador</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z' fill='%232563eb'/%3E%3Crect x='8' y='10.5' width='8' height='2.4' fill='white'/%3E%3Crect x='9.5' y='14.4' width='5' height='2.4' fill='white'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/estilo.css">
 </head>
@@ -38,89 +38,229 @@
     </div>
   </div>
 
-  <ol id="etapas" class="etapas hidden" aria-label="Etapas"></ol>
+  <!-- Mesmo componente nas duas telas: na inicial, "Enviar" é a etapa atual. -->
+  <ol id="etapas" class="etapas" aria-label="Etapas"></ol>
 
-  <div id="topo-acoes" class="topo-acoes hidden">
-    <button id="btn-atalhos" class="icone-botao" aria-label="Atalhos de teclado"
+  <div id="topo-acoes" class="topo-acoes">
+    <button id="btn-atalhos" class="icone-botao" aria-label="Ajuda e atalhos de teclado"
             aria-haspopup="dialog" aria-controls="popover-atalhos">?</button>
-    <button id="btn-principal" class="primario">Aprovar e gerar PDF</button>
+    <button id="btn-principal" class="primario hidden">Aprovar e gerar PDF</button>
   </div>
 </header>
 
 <!-- ------------------------------------------------------------------ -->
-<section id="tela-upload">
-  <div class="abertura">
+<!-- Tela inicial. Fala com quem vai anonimizar um processo: nome de modelo,
+     comando e "vetores" moram só na gaveta "Como garantimos isso". -->
+<section id="tela-upload" class="tela-envio">
+  <div class="envio">
 
-    <div class="chamada">
-      <h1>Anonimize um documento sem tirá-lo desta máquina</h1>
-      <p class="subtitulo">
-        A detecção roda localmente. O arquivo final só é liberado depois de
-        passar por uma verificação independente em dez frentes.
+    <div class="envio-cabeca">
+      <h1>Remova dados pessoais de PDFs com segurança</h1>
+      <p class="subtitulo">Revise cada trecho antes de publicar ou enviar para uma IA.</p>
+      <!-- "Nada sai sem você mandar", e não "o arquivo não sai daqui": o envio
+           a uma IA, quando o usuário o faz, manda o texto com códigos para
+           fora. A frase tem de continuar verdadeira nesse caso. -->
+      <p class="selo-confianca">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>
+        </svg>
+        Processado nesta máquina — nada sai daqui sem você mandar.
       </p>
     </div>
 
-    <label class="zona" id="zona" for="arquivo">
-      <input type="file" id="arquivo" accept="application/pdf" hidden>
-      <svg class="icone" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 15V3m0 0L8 7m4-4 4 4" fill="none" stroke="currentColor"
-              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M3 15v3.5A2.5 2.5 0 0 0 5.5 21h13a2.5 2.5 0 0 0 2.5-2.5V15"
-              fill="none" stroke="currentColor" stroke-width="1.5"
-              stroke-linecap="round"/>
-      </svg>
-      <div class="zona-titulo">Arraste um PDF aqui</div>
-      <div class="zona-sub">ou <span class="link">escolha um arquivo</span></div>
-      <div class="zona-meta">PDF com texto selecionável · até 50 MB</div>
-    </label>
-
-    <div id="erro-upload" class="erro hidden" role="alert"></div>
-
-    <!-- Carregando. As etapas são as que existem de fato: o envio tem
-         progresso medido; extração e detecção acontecem numa única chamada
-         ao servidor e não dá para separá-las sem inventar números. -->
-    <div id="carregando-upload" class="carregando hidden" aria-live="polite">
-      <div class="carregando-cabeca">
-        <span class="girando"></span>
-        <div>
-          <div class="progresso-titulo" id="progresso-titulo">Preparando…</div>
-          <div class="progresso-sub" id="progresso-sub"></div>
+    <div class="cartao-envio" id="cartao-envio">
+      <fieldset class="objetivo" id="objetivo">
+        <legend>Para que é o documento?</legend>
+        <p class="objetivo-nota">Define o formato de substituição; dá para trocar na revisão.</p>
+        <div class="opcoes-objetivo">
+          <label class="opcao-objetivo">
+            <input type="radio" name="objetivo" value="publicar" checked>
+            <span class="objetivo-titulo">Publicar ou compartilhar</span>
+            <span class="objetivo-sub">Tarja preta</span>
+          </label>
+          <label class="opcao-objetivo">
+            <input type="radio" name="objetivo" value="ia">
+            <span class="objetivo-titulo">Enviar para análise por IA</span>
+            <span class="objetivo-sub">Códigos no lugar dos dados</span>
+          </label>
         </div>
-      </div>
-      <ol class="etapas-upload">
-        <li id="etapa-envio">Enviando o arquivo <span id="envio-pct"></span></li>
-        <li id="etapa-deteccao">Extraindo texto e detectando dados — alguns segundos por página</li>
-        <li id="etapa-pronto">Pronto</li>
-      </ol>
-      <div class="esqueleto" aria-hidden="true">
-        <div class="esqueleto-pagina"></div>
-        <div class="esqueleto-pagina"></div>
+      </fieldset>
+
+      <!-- Estados do envio. Um de cada vez; a região anuncia a troca. -->
+      <div id="estado-envio" class="estado-envio" aria-live="polite">
+        <div id="zona" class="zona">
+          <input type="file" id="arquivo" accept="application/pdf,.pdf" hidden>
+          <span class="zona-icone" aria-hidden="true">
+            <svg class="ic" viewBox="0 0 24 24">
+              <path d="M12 16V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/>
+            </svg>
+          </span>
+          <p class="zona-titulo">
+            <span class="so-largo">Arraste o PDF aqui ou</span>
+            <button id="btn-selecionar" class="primario">Selecionar PDF</button>
+          </p>
+          <p class="zona-meta">
+            PDF com texto selecionável · até <span id="limite-mb">50</span> MB
+            <span class="so-largo">· <kbd>Ctrl</kbd>+<kbd>V</kbd> para colar</span>
+          </p>
+        </div>
+
+        <div id="arquivo-escolhido" class="arquivo-escolhido hidden">
+          <svg class="ic icone-arquivo" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5Z"/><path d="M14 3.5v5h5"/>
+          </svg>
+          <div class="arquivo-info">
+            <span id="arquivo-nome" class="arquivo-nome"></span>
+            <span id="arquivo-meta" class="auxiliar"></span>
+          </div>
+          <button id="btn-trocar" class="secundario pequeno">Trocar</button>
+        </div>
+
+        <!-- Processando. As etapas são as que existem de fato: a leitura tem
+             progresso medido; extração e detecção acontecem numa única
+             chamada ao servidor, e separá-las na tela seria inventar em que
+             ponto uma acaba e a outra começa. -->
+        <div id="carregando-upload" class="carregando hidden">
+          <ol class="etapas-upload">
+            <li id="etapa-envio"><span class="marca-etapa"></span>Lendo o arquivo <span id="envio-pct" class="auxiliar"></span></li>
+            <li id="etapa-deteccao"><span class="marca-etapa"></span>Extraindo texto e detectando dados pessoais <span class="auxiliar">— alguns segundos por página</span></li>
+            <li id="etapa-pronto"><span class="marca-etapa"></span>Preparando a revisão</li>
+          </ol>
+          <button id="btn-cancelar" class="secundario pequeno">Cancelar</button>
+        </div>
+
+        <div id="erro-upload" class="erro-envio hidden" role="alert">
+          <div class="erro-texto">
+            <strong id="erro-titulo"></strong>
+            <span id="erro-detalhe"></span>
+          </div>
+          <button id="btn-outro" class="secundario pequeno">Escolher outro</button>
+        </div>
       </div>
     </div>
 
-    <ul class="garantias">
+    <div class="tipos">
+      <span class="tipos-rotulo">Detecta:</span>
+      <ul id="chips-tipos" class="chips"></ul>
+    </div>
+
+    <ul class="garantias-faixa">
       <li>
-        <strong>Sem rede</strong>
-        O serviço que lê o documento roda sem rota para fora. Verificável com
-        <code>make ui-proof</code>.
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16.5V20"/>
+        </svg>
+        <div>
+          <strong>Processado localmente</strong>
+          <span>A leitura e a anonimização não usam serviços externos.</span>
+        </div>
       </li>
       <li>
-        <strong>Redação de verdade</strong>
-        O texto sai do arquivo, junto com metadados, anexos e sumário. Não é
-        um retângulo por cima.
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="6.5" cy="7" r="2.5"/><circle cx="6.5" cy="17" r="2.5"/><path d="M8.5 8.5 19 18"/><path d="M8.5 15.5 19 6"/>
+        </svg>
+        <div>
+          <strong>Removido de verdade</strong>
+          <span>O texto sai do arquivo, com metadados. Não é só um retângulo por cima.</span>
+        </div>
       </li>
       <li>
-        <strong>Você aprova</strong>
-        Nada é gerado antes de você revisar e aprovar.
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m5 12.5 4.5 4.5L19 7.5"/>
+        </svg>
+        <div>
+          <strong>Você aprova</strong>
+          <span>Nada é gerado antes da sua revisão e da verificação final.</span>
+        </div>
       </li>
     </ul>
 
-    <p class="rodape-abertura">
-      Documento escaneado ainda não é suportado — sem texto no arquivo, não há
-      o que remover. <span id="modelo-ativo"></span>
-    </p>
-
+    <button id="btn-como-garantimos" class="link-botao como-garantimos"
+            aria-haspopup="dialog" aria-controls="gaveta-garantias">Como garantimos isso ▸</button>
   </div>
 </section>
+
+<!-- Soltar em qualquer ponto da janela. -->
+<div id="soltar-overlay" class="soltar-overlay hidden" aria-hidden="true">
+  <div class="soltar-caixa">
+    <svg class="ic" viewBox="0 0 24 24">
+      <path d="M12 16V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3"/>
+    </svg>
+    <span>Solte para anonimizar</span>
+  </div>
+</div>
+
+<!-- Os detalhes técnicos que antes ficavam soltos na tela inicial. -->
+<div id="gaveta-fundo" class="gaveta-fundo hidden">
+  <aside id="gaveta-garantias" class="gaveta" role="dialog" aria-modal="true"
+         aria-labelledby="gaveta-titulo">
+    <div class="gaveta-cabeca">
+      <h2 id="gaveta-titulo">Como garantimos isso</h2>
+      <button id="btn-fechar-gaveta" class="icone-botao" aria-label="Fechar">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="gaveta-corpo">
+      <section>
+        <h3>Onde o documento é processado</h3>
+        <p>
+          O serviço que lê o documento roda sem rota de rede para fora. Isso é
+          verificável: <code>make ui-proof</code> confirma que a interface
+          responde e que o serviço não alcança a internet.
+        </p>
+        <p>
+          A única saída existe quando você escolhe enviar o texto com códigos a
+          uma IA, depois da revisão e com confirmação a cada envio. Esse envio
+          passa por um serviço separado, que nunca vê o documento original
+          (<code>make llm-proof</code>).
+        </p>
+      </section>
+      <section>
+        <h3>Como os dados são encontrados</h3>
+        <p>
+          Documentos como CPF e CNPJ são reconhecidos pelo formato e conferidos
+          pelo dígito verificador. Nomes, órgãos, locais e datas são
+          reconhecidos por um modelo de linguagem que roda aqui:
+          <code id="detalhe-modelo">—</code>.
+        </p>
+        <p>
+          A detecção não é perfeita: um nome pode escapar. Por isso nada é
+          gerado sem a sua revisão. Datas, órgãos e locais começam preservados,
+          porque em documento público costumam ter de continuar legíveis.
+        </p>
+        <ul id="lista-tipos-completa" class="lista-colunas"></ul>
+      </section>
+      <section>
+        <h3>A verificação antes de liberar</h3>
+        <p>
+          O arquivo gerado é aberto de novo e cada valor marcado é procurado em
+          10 camadas — 11 quando há código no lugar. Se algum sobreviver em
+          qualquer uma, o arquivo não é liberado.
+        </p>
+        <ul id="lista-camadas" class="lista-colunas"></ul>
+      </section>
+      <section>
+        <h3>O que muda no PDF além dos dados</h3>
+        <ul class="lista-simples">
+          <li>Layout, paginação e fontes ficam intactos.</li>
+          <li>Hyperlinks são removidos, inclusive os inofensivos.</li>
+          <li>O sumário (marcadores) é apagado.</li>
+          <li>Arquivos anexados ao PDF são removidos.</li>
+          <li>Metadados são zerados: autor, título, datas, produtor.</li>
+          <li>A assinatura digital, se houver, deixa de valer.</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Limitações</h3>
+        <ul class="lista-simples">
+          <li>PDF escaneado (imagem) não tem texto para remover: ainda não há
+            OCR. Páginas escaneadas dentro de um PDF com texto não são lidas, e
+            a revisão avisa quais são.</li>
+          <li>PDF protegido por senha precisa ser salvo sem a proteção antes.</li>
+        </ul>
+      </section>
+    </div>
+  </aside>
+</div>
 
 <!-- ------------------------------------------------------------------ -->
 <main id="tela-revisao" class="hidden">
@@ -190,6 +330,9 @@
       <span id="selo-texto">Aguardando a primeira verificação…</span>
     </button>
     <div id="lista-pendencias" class="pendencias hidden"></div>
+    <!-- Documento parcialmente escaneado: a detecção não leu essas páginas,
+         e a verificação também não tem texto nelas para conferir. -->
+    <p id="aviso-sem-texto" class="aviso aviso-inspetor hidden" role="status"></p>
 
     <div class="abas" role="tablist" aria-label="Seções">
       <button id="aba-deteccoes" role="tab" aria-selected="true" aria-controls="painel-deteccoes">Detecções</button>
@@ -455,7 +598,12 @@
 
 <!-- Atalhos. -->
 <div id="popover-atalhos" class="popover atalhos hidden" role="dialog" aria-label="Atalhos de teclado">
-  <h2 class="rotulo-grupo">Atalhos</h2>
+  <h2 class="rotulo-grupo">Envio</h2>
+  <dl>
+    <dt><kbd>Ctrl</kbd> <kbd>O</kbd></dt><dd>Escolher um PDF</dd>
+    <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Colar um PDF copiado</dd>
+  </dl>
+  <h2 class="rotulo-grupo">Revisão</h2>
   <dl>
     <dt><kbd>J</kbd> <kbd>↓</kbd></dt><dd>Próxima ocorrência</dd>
     <dt><kbd>K</kbd> <kbd>↑</kbd></dt><dd>Ocorrência anterior</dd>
