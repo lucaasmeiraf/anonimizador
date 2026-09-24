@@ -180,6 +180,34 @@ def alternar_span(corpo: AlternarSpan, sessao: Sessao = Depends(pegar_sessao)) -
     return sessao.to_dict()
 
 
+@app.patch("/api/doc/{doc_id}/span/iguais")
+def alternar_iguais(corpo: AlternarSpan, sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    """O clique individual para todos os trechos com o mesmo valor.
+    O que conta como "igual" é decidido em `Sessao.alternar_iguais`."""
+    if corpo.span_id not in sessao.spans:
+        raise HTTPException(404, "span inexistente")
+    n = sessao.alternar_iguais(corpo.span_id, corpo.ativo)
+    resposta = sessao.to_dict()
+    resposta["alterados"] = n
+    return resposta
+
+
+class MudarEntidade(BaseModel):
+    span_id: str
+    entidade: str
+
+
+@app.patch("/api/doc/{doc_id}/span/entidade")
+def mudar_entidade(corpo: MudarEntidade, sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    if corpo.span_id not in sessao.spans:
+        raise HTTPException(404, "span inexistente")
+    try:
+        sessao.mudar_entidade(corpo.span_id, corpo.entidade)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return sessao.to_dict()
+
+
 @app.delete("/api/doc/{doc_id}/span/{span_id}")
 def remover_span(span_id: str, sessao: Sessao = Depends(pegar_sessao)) -> dict:
     """Apaga um trecho que o usuário adicionou. Só os dele."""
@@ -306,6 +334,18 @@ def adicionar_termo(corpo: Termo, sessao: Sessao = Depends(pegar_sessao)) -> dic
     return resposta
 
 
+@app.get("/api/doc/{doc_id}/contar")
+def contar_termo(termo: str, sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    """Quantas ocorrências `/termo` marcaria e quantas a verificação acha —
+    sem criar nada. Ver `Sessao.contar_termo`."""
+    if len(termo) > 200:
+        raise HTTPException(400, "termo longo demais")
+    try:
+        return sessao.contar_termo(termo)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 class PerfilEntrada(BaseModel):
     nome: str = "personalizado"
     descricao: str = ""
@@ -349,6 +389,16 @@ def aprovar(sessao: Sessao = Depends(pegar_sessao)) -> dict:
         # como está.
         raise HTTPException(422, str(exc)) from exc
     return sessao.to_dict()
+
+
+@app.post("/api/doc/{doc_id}/preverificar")
+def preverificar(sessao: Sessao = Depends(pegar_sessao)) -> dict:
+    """A verificação da aprovação, rodada durante a revisão.
+
+    Não devolve arquivo nem aprova nada: o PDF de prova é apagado antes da
+    resposta, e baixar continua exigindo `/aprovar`. Ver `Sessao.preverificar`.
+    """
+    return sessao.preverificar()
 
 
 @app.get("/api/doc/{doc_id}/download")

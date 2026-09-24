@@ -37,7 +37,7 @@ import fitz  # PyMuPDF
 
 from .. import config
 from ..layout import TextMap, build_text_map
-from ..pdf_redactor import medir_token, redact_document
+from ..pdf_redactor import PseudonimoImpossivelNoPDF, medir_token, redact_document
 from ..politica import (
     MANTER,
     OPERADORES_QUE_REMOVEM,
@@ -71,6 +71,40 @@ TTL_PADRAO = 2 * 60 * 60  # 2 h
 # externo, falso positivo custa recusar um envio seguro, e falso negativo
 # custa mandar um nome real para um terceiro, sem desfazer.
 LIMIAR_PRE_ENVIO = 0.20
+
+
+def _preparar_paginas(textos: list[str]) -> list[tuple[str, str]]:
+    """Cada página nas duas formas em que a verificação procura: espaço
+    colapsado, e sem os separadores de identificador."""
+    return [(_normalizar_verificacao(t), SEPARADORES_DE_ID.sub("", t)) for t in textos]
+
+
+def _contar_por_pagina(paginas: list[tuple[str, str]], valor: str) -> dict[int, int]:
+    """Página (1-based) -> quantas vezes ``valor`` aparece nela, em qualquer
+    forma de ``_variantes``. Só as páginas em que aparece.
+
+    É a busca do ``verify`` feita por página: a mesma régua que reprova o
+    arquivo é a que diz ao usuário onde procurar.
+
+    **O maior número entre as formas, não o da primeira que casa.** Parar na
+    primeira contava 1 para ``18/02/2026`` numa página que também tem
+    ``18.02.2026``: a forma literal casava uma vez e a de dígitos — que pega as
+    duas, porque os separadores saem — nunca era consultada. A tela diria "1"
+    e a verificação acharia 2, que é o defeito que esta contagem existe para
+    evitar. Somar as formas contaria a mesma ocorrência duas vezes.
+    """
+    achado: dict[int, int] = {}
+    for numero, (texto_norm, texto_ids) in enumerate(paginas, 1):
+        n = max(
+            (
+                (texto_ids if forma.isdigit() else texto_norm).count(forma)
+                for forma in _variantes(valor)
+            ),
+            default=0,
+        )
+        if n:
+            achado[numero] = n
+    return achado
 
 
 @dataclass
@@ -131,6 +165,17 @@ class Sessao:
     # enviado, sem resposta recebida. Não é apagada por `_invalidar`: o envio
     # aconteceu, e editar o documento depois não o desfaz.
     envios: list[dict] = field(default_factory=list)
+    # Cresce a cada edição (`_invalidar`). A pré-verificação roda em segundo
+    # plano enquanto o usuário continua editando; o número diz a que estado
+    # da proposta um resultado se refere, e a tela descarta o que chegou
+    # atrasado em vez de mostrar pendência de uma versão que já não existe.
+    versao: int = 0
+    # O que o PDF de origem tem e a redação vai perder — assinatura, links,
+    # sumário. Contagem e booleano, nunca conteúdo: serve para a tela avisar
+    # no momento de exportar só o que se aplica a *este* arquivo.
+    caracteristicas: dict = field(default_factory=dict)
+    # Último resultado da pré-verificação, com a versão a que se refere.
+    _previa: tuple[int, dict] | None = field(default=None, repr=False)
     # Alocador de token **da sessão**, não de cada artefato.
     #
     # Criar um por chamada faria o mesmo nome virar `[P-7F3A]` no PDF e
@@ -286,6 +331,62 @@ class Sessao:
         s.ativo = ativo
         self._invalidar()
         logger.info("sessao %s: span %s ativo=%s", self.doc_id, span_id, ativo)
+        return s
+
+    def alternar_iguais(self, span_id: str, ativo: bool) -> int:
+        """O clique individual, aplicado a todo trecho com o **mesmo valor**.
+
+        "Não anonimizar nenhuma igual": o revisor decide sobre um nome, não
+        sobre cada aparição dele. Fazer isso pelo navegador — um PATCH por
+        trecho — deixaria a regra de o que conta como "igual" morando na tela.
+        Aqui ela é uma só: mesmo texto, com o espaçamento colapsado (a mesma
+        tolerância de ``_ocorrencias``), de qualquer classe.
+
+        Só propostas do detector. Trecho apontado à mão tem desfazer próprio,
+        que é apagar (``remover_span``); desligar deixaria um retângulo que
+        ninguém propôs.
+        """
+        alvo = self.spans[span_id]
+        chave = " ".join(alvo.valor.split())
+        ids = [
+            k for k, s in self.spans.items()
+            if s.origem != "usuario" and " ".join(s.valor.split()) == chave
+        ]
+        for k in ids:
+            self.spans[k].ativo = ativo
+        if ids:
+            self._invalidar()
+        logger.info(
+            "sessao %s: %d trecho(s) iguais a %s -> ativo=%s",
+            self.doc_id, len(ids), span_id, ativo,
+        )
+        return len(ids)
+
+    def mudar_entidade(self, span_id: str, entidade: str) -> SpanUI:
+        """Corrige o rótulo de um trecho detectado.
+
+        Rótulo errado tem consequência: define o prefixo do código (`[P-…]`
+        para pessoa, `[ORG-…]` para órgão) e a política que se aplica. O caso
+        comum é o de 2026-09-23: o nome de uma empresa detectado como
+        ``PERSON`` virou código de pessoa.
+
+        **O efeito visível não muda com o rótulo.** Se o trecho ia sair do
+        documento e a classe nova está em ``manter``, ele continua saindo — a
+        decisão vira explícita no trecho. Corrigir um rótulo não pode ser um
+        jeito escondido de desligar uma tarja; para isso existe "não
+        anonimizar".
+        """
+        if entidade not in config.ENTIDADES_ATIVAS:
+            raise ValueError(f"entidade desconhecida: {entidade}")
+        s = self.spans[span_id]
+        if s.origem == "usuario":
+            raise ValueError("trecho apontado à mão não tem classe detectada")
+        antes = self.sera_tarjado(s)
+        s.entity = entidade
+        if self.sera_tarjado(s) != antes:
+            s.ativo = antes
+        self._invalidar()
+        logger.info("sessao %s: span %s -> %s", self.doc_id, span_id, entidade)
         return s
 
     def adicionar_por_termo(self, termo: str) -> list[SpanUI]:
@@ -593,6 +694,8 @@ class Sessao:
         """
         if self.aprovada or self.redigido or self.texto_pseudo:
             logger.info("sessao %s: aprovacao invalidada por edicao", self.doc_id)
+        self.versao += 1
+        self._previa = None
         self.aprovada = False
         self.relatorio = None
         if self.redigido and self.redigido.exists():
@@ -608,15 +711,18 @@ class Sessao:
         self.texto_pseudo = None
 
     # -- produção do arquivo ----------------------------------------------
-    def aprovar(self) -> dict:
-        """Redige de verdade, verifica de verdade, e só então libera.
+    def _redigir_e_verificar(self, ativos: list[SpanUI], saida: Path) -> dict:
+        """Redige em ``saida``, verifica e disseca. Não decide nada sobre o
+        arquivo: quem chama decide se ele fica, e quem pode alcançá-lo.
 
-        A ordem importa: se ``verify`` reprovar, o arquivo redigido é apagado.
-        Um PDF que falhou a verificação não pode ficar em disco esperando
-        alguém baixá-lo por outro caminho.
+        Existe para que a aprovação e a pré-verificação rodem **o mesmo**
+        código. Uma pré-verificação com heurística própria mais barata
+        reintroduziria o defeito que ela veio resolver: a tela dizendo "1
+        ocorrência tarjada" para um termo manual enquanto a verificação de
+        verdade acha 2. A busca do termo é literal; o ``verify`` procura também
+        variantes (só dígitos, sem espaço) e em mais de um extrator — qualquer
+        diferença entre os dois caminhos vira surpresa no fim.
         """
-        ativos = self.spans_ativos()
-        saida = self.pasta / "redigido.pdf"
         tokens, sem_token, sem_espaco = self._tokens_do_pdf(ativos)
 
         doc = fitz.open(str(self.original))
@@ -642,7 +748,7 @@ class Sessao:
         # exatamente a mensagem que não deixa ninguém agir.
         ocorrencias = self._dissecar(rel.leaks, saida)
 
-        self.relatorio = {
+        return {
             "spans_redigidos": res.spans_redigidos,
             "retangulos": res.retangulos,
             "tokens_escritos": len(res.tokens_escritos),
@@ -660,7 +766,20 @@ class Sessao:
             "ocorrencias": ocorrencias,
         }
 
-        if rel.ok:
+    def aprovar(self) -> dict:
+        """Redige de verdade, verifica de verdade, e só então libera.
+
+        A ordem importa: se ``verify`` reprovar, o arquivo redigido é apagado.
+        Um PDF que falhou a verificação não pode ficar em disco esperando
+        alguém baixá-lo por outro caminho.
+        """
+        ativos = self.spans_ativos()
+        saida = self.pasta / "redigido.pdf"
+        self.relatorio = self._redigir_e_verificar(ativos, saida)
+        ok = self.relatorio["verificacao_ok"]
+        ocorrencias = self.relatorio["ocorrencias"]
+
+        if ok:
             self.aprovada = True
             self.redigido = saida
         else:
@@ -673,7 +792,7 @@ class Sessao:
             logger.error(
                 "sessao %s: verificacao REPROVOU, %d ocorrencia(s); %s",
                 self.doc_id,
-                len(rel.leaks),
+                self.relatorio["total_vazamentos"],
                 "; ".join(
                     f"{o['vetor']}:{o['objeto']}"
                     + (" (visivel no texto)" if o["visivel_no_texto"] else "")
@@ -684,10 +803,132 @@ class Sessao:
         logger.info(
             "sessao %s: aprovacao %s, %d spans",
             self.doc_id,
-            "ok" if rel.ok else "REPROVADA",
-            res.spans_redigidos,
+            "ok" if ok else "REPROVADA",
+            self.relatorio["spans_redigidos"],
         )
         return self.relatorio
+
+    def preverificar(self) -> dict:
+        """A verificação da aprovação, rodada **antes** de o usuário aprovar.
+
+        Sem isto a verificação só acontecia no clique final e reprovava no pior
+        momento: o usuário apontava um termo, a tela dizia "1 ocorrência
+        tarjada", e só na geração descobria que sobravam 2. Agora a tela roda
+        isto a cada edição e mostra a pendência enquanto ele ainda está
+        revisando.
+
+        É ``_redigir_e_verificar`` inteiro — os mesmos vetores, a mesma busca
+        por variante —, e não uma aproximação: a contagem que a tela mostra
+        tem de ser a que a aprovação vai encontrar.
+
+        **O arquivo nunca é entregável.** Nasce com nome sorteado na pasta da
+        sessão, nenhuma rota o alcança, e é apagado antes de retornar, passe ou
+        não. Esta função não toca ``aprovada``, ``redigido`` nem
+        ``relatorio``: aprovar continua sendo um ato explícito, que refaz tudo
+        do zero. O resultado é guardado por ``versao`` e cai a cada edição.
+        """
+        versao = self.versao
+        if self._previa and self._previa[0] == versao:
+            return self._previa[1]
+
+        # `list(...)` antes de iterar: a pré-verificação roda enquanto o
+        # usuário segue editando, e iterar o dict vivo pode encontrá-lo
+        # mudando de tamanho no meio.
+        ativos = [s for s in list(self.spans.values()) if self.sera_tarjado(s)]
+        base = {"versao": versao, "valores_ativos": len(ativos)}
+        if not ativos:
+            resultado = {**base, "ok": True, "total_vazamentos": 0,
+                         "vazamentos": [], "ocorrencias": [], "vetores": []}
+            self._previa = (versao, resultado)
+            return resultado
+
+        saida = self.pasta / f"previa-{secrets.token_hex(6)}.pdf"
+        try:
+            rel = self._redigir_e_verificar(ativos, saida)
+        except PseudonimoImpossivelNoPDF as exc:
+            # A mesma trava da aprovação: as duas medidas de largura
+            # discordaram. A mensagem carrega token e larguras, não o valor.
+            return {**base, "ok": False, "erro": str(exc), "total_vazamentos": 0,
+                    "vazamentos": [], "ocorrencias": [], "vetores": []}
+        finally:
+            saida.unlink(missing_ok=True)
+
+        resultado = {
+            **base,
+            "ok": rel["verificacao_ok"],
+            "total_vazamentos": rel["total_vazamentos"],
+            "vazamentos": rel["vazamentos"],
+            "vetores": rel["vetores"],
+            "valores_checados": rel["valores_checados"],
+            "ocorrencias": rel["ocorrencias"],
+            "tarja_por_falta_de_espaco": rel["tarja_por_falta_de_espaco"],
+        }
+        # Só guarda se ninguém editou enquanto rodava; senão o resultado já
+        # nasceu velho e a próxima chamada precisa refazer.
+        if self.versao == versao:
+            self._previa = (versao, resultado)
+        logger.info(
+            "sessao %s: pre-verificacao v%d %s, %d ocorrencia(s)",
+            self.doc_id,
+            versao,
+            "ok" if resultado["ok"] else "PENDENTE",
+            resultado["total_vazamentos"],
+        )
+        return resultado
+
+    def contar_termo(self, termo: str) -> dict:
+        """Quantas vezes ``termo`` aparece, pelas duas réguas, **sem** criar nada.
+
+        Duas contagens porque elas respondem perguntas diferentes, e a
+        diferença entre elas é exatamente o que a tela precisa mostrar antes
+        do clique:
+
+        * ``novas`` — quantas ``adicionar_por_termo`` vai marcar: ocorrências
+          literais (tolerando espaçamento) ainda não cobertas e com região
+          visível na página.
+        * ``no_texto`` — quantas a verificação vai procurar: a busca por
+          variante do ``verify`` (só dígitos, sem espaço) sobre o texto de
+          cada página. Uma data ``18/02/2026`` casa também ``18.02.2026``.
+
+        Quando ``no_texto`` passa de ``novas + ja_cobertas``, marcar o termo
+        não basta, e a tela diz isso antes — em vez de a verificação dizer no
+        fim.
+        """
+        termo = termo.strip()
+        if len(termo) < 2:
+            raise ValueError("termo curto demais")
+
+        ativos = [(s.start, s.end) for s in self.spans_ativos()]
+        novas = ja_cobertas = sem_regiao = 0
+        paginas: set[int] = set()
+        for ini, fim in self._ocorrencias(termo, self.tm.text):
+            if any(ini < b and a < fim for a, b in ativos):
+                ja_cobertas += 1
+                continue
+            rects = self.tm.rects_for(ini, fim)
+            if not rects:
+                sem_regiao += 1
+                continue
+            novas += 1
+            paginas.update(pno + 1 for pno, _ in rects)
+
+        return {
+            "novas": novas,
+            "ja_cobertas": ja_cobertas,
+            "sem_regiao": sem_regiao,
+            "paginas": sorted(paginas),
+            "no_texto": sum(self._contar_no_original(termo).values()),
+        }
+
+    def _contar_no_original(self, valor: str) -> dict[int, int]:
+        """Página (1-based) -> ocorrências de ``valor`` no PDF **original**,
+        com a busca por variante da verificação. Ver ``_dissecar``."""
+        doc = fitz.open(str(self.original))
+        try:
+            textos = [doc.load_page(i).get_text() for i in range(doc.page_count)]
+        finally:
+            doc.close()
+        return _contar_por_pagina(_preparar_paginas(textos), valor)
 
     def gerar_texto_pseudonimizado(self) -> dict:
         """Produz o texto com tokens no lugar dos valores, e verifica.
@@ -889,26 +1130,11 @@ class Sessao:
         # A classificação errada manda o usuário para o caminho oposto do
         # conserto: ela diz "defeito do redator, você não conserta sozinho",
         # quando a verdade era "outra ocorrência, tarje todas em um clique".
-        paginas_norm = [
-            (_normalizar_verificacao(t), SEPARADORES_DE_ID.sub("", t))
-            for t in textos_pagina
-        ]
-
-        def _achar(valor: str) -> dict[int, int]:
-            """Página (1-based) -> quantas vezes o valor aparece nela, em
-            qualquer forma. Só as páginas em que aparece."""
-            achado: dict[int, int] = {}
-            for numero, (texto_norm, texto_ids) in enumerate(paginas_norm, 1):
-                for forma in _variantes(valor):
-                    alvo = texto_ids if forma.isdigit() else texto_norm
-                    if forma in alvo:
-                        achado[numero] = alvo.count(forma)
-                        break
-            return achado
+        paginas_norm = _preparar_paginas(textos_pagina)
 
         por_valor: dict[str, dict] = {}
         for leak in leaks:
-            por_pagina = _achar(leak.valor)
+            por_pagina = _contar_por_pagina(paginas_norm, leak.valor)
             ocorrencias = sum(por_pagina.values())
             item = por_valor.setdefault(
                 leak.valor,
@@ -963,7 +1189,15 @@ class Sessao:
             "pode_baixar_texto": self.pode_baixar_texto,
             "relatorio_texto": self.relatorio_texto,
             "envios": self.envios,
+            "versao": self.versao,
+            "caracteristicas": self.caracteristicas,
         }
+
+    def _fragmento(self, s: SpanUI) -> bool:
+        t = self.tm.text
+        corta_inicio = 0 < s.start < len(t) and t[s.start - 1].isalnum() and t[s.start].isalnum()
+        corta_fim = 0 < s.end < len(t) and t[s.end - 1].isalnum() and t[s.end].isalnum()
+        return corta_inicio or corta_fim
 
     def span_dict(self, s: SpanUI, tokens: dict | None = None) -> dict:
         # Token que este trecho terá **no PDF**. Nulo quando sai em tarja —
@@ -994,6 +1228,10 @@ class Sessao:
             # o caso raro é ter perdido a disputa de sobreposição para outro
             # trecho — nos dois o valor sai, em tarja.
             "sem_token": bool(pediu_token and token is None),
+            # Começa ou termina no meio de uma palavra ("RO" dentro de
+            # "RODOVIÁRIA"). Fato sobre o texto, não decisão: a tela decide o
+            # que fazer com ele, e nunca esconde um trecho que vai sair do PDF.
+            "fragmento": self._fragmento(s),
             "rects": [
                 {
                     "pagina": pno,
@@ -1065,6 +1303,7 @@ class Sessoes:
                 }
                 for i in range(doc.page_count)
             ]
+            caracteristicas = _caracteristicas(doc)
         finally:
             doc.close()
 
@@ -1075,6 +1314,7 @@ class Sessoes:
             nome_arquivo=nome_arquivo,
             tm=tm,
             paginas=paginas,
+            caracteristicas=caracteristicas,
         )
         with self._lock:
             self._itens[doc_id] = sessao
@@ -1098,6 +1338,34 @@ class Sessoes:
         shutil.rmtree(sessao.pasta, ignore_errors=True)
         logger.info("sessao %s removida, arquivos apagados", doc_id)
         return True
+
+
+def _caracteristicas(doc: fitz.Document) -> dict:
+    """O que a redação vai tirar do arquivo além dos dados marcados.
+
+    A lista de avisos era fixa e ficava num acordeão no rodapé — "assinatura
+    digital é invalidada" aparecia para todo documento, inclusive os que não
+    têm assinatura, e ninguém a lia. Com isto a tela avisa, na hora de
+    exportar, só o que se aplica a este arquivo.
+
+    ``get_sigflags``: -1 sem formulário, 0 formulário sem campo de assinatura,
+    1 ou mais há campo de assinatura (3 = assinado). Campo vazio também conta:
+    o aviso é sobre o que a remoção de texto destrói, e um campo preparado
+    para assinatura é parte do fluxo que o cliente pode esperar preservado.
+    """
+    try:
+        assinatura = doc.get_sigflags() > 0
+    except Exception:  # noqa: BLE001 — PDF estranho não pode derrubar o upload
+        assinatura = False
+    links = 0
+    for pagina in doc:
+        links += len(pagina.get_links())
+    return {
+        "assinatura": assinatura,
+        "links": links,
+        "marcadores": len(doc.get_toc(simple=True)),
+        "anexos": doc.embfile_count(),
+    }
 
 
 def perfil_padrao() -> PerfilPolitica:
