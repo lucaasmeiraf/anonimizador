@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -59,6 +60,14 @@ ANALISE_TIMEOUT = float(os.getenv("ANON_ANALISE_TIMEOUT", "180"))
 sessoes = Sessoes(RAIZ_SESSOES)
 _pipeline: DetectionPipeline | None = None
 
+# Uma detecção por vez. As rotas que detectam rodam no pool de threads do
+# FastAPI (são `def`, não `async def`), então duas pessoas enviando ao mesmo
+# tempo chegariam juntas ao mesmo `AnalyzerEngine` e ao mesmo pipeline do
+# transformers — e nenhum dos dois se declara seguro para chamada concorrente.
+# Serializar não custa vazão: a detecção já ocupa todos os núcleos da CPU.
+# O que ela não pode mais é travar o servidor inteiro enquanto roda.
+_trava_deteccao = threading.Lock()
+
 
 def pipeline() -> DetectionPipeline:
     global _pipeline
@@ -67,6 +76,14 @@ def pipeline() -> DetectionPipeline:
         _pipeline = DetectionPipeline()
         logger.info("pipeline pronto")
     return _pipeline
+
+
+def detectar(texto: str, score_threshold: float | None = None):
+    """Todo caminho de detecção da API passa por aqui, sob a trava."""
+    with _trava_deteccao:
+        if score_threshold is None:
+            return pipeline().analyze(texto)
+        return pipeline().analyze(texto, score_threshold=score_threshold)
 
 
 @asynccontextmanager
@@ -100,8 +117,14 @@ def pegar_sessao(doc_id: str) -> Sessao:
 # Documento
 # --------------------------------------------------------------------------
 @app.post("/api/doc")
-async def criar_doc(arquivo: UploadFile = File(...)) -> dict:
-    dados = await arquivo.read()
+def criar_doc(arquivo: UploadFile = File(...)) -> dict:
+    # `def`, não `async def`: a detecção é CPU pura e leva ~0,7 s por página
+    # (102 páginas mediram 69 s). Dentro de `async def` ela roda no laço de
+    # eventos, e durante esse tempo o servidor inteiro para de responder —
+    # medido em 2026-09-24: `/api/saude` ficou 60 s sem resposta, e a tela de
+    # qualquer outra pessoa congelaria junto. Como `def`, o FastAPI a leva ao
+    # pool de threads. `tests/test_envio_nao_trava.py` trava isto.
+    dados = arquivo.file.read()
     if not dados:
         raise HTTPException(400, "arquivo vazio")
     if len(dados) > MAX_BYTES:
@@ -132,7 +155,7 @@ async def criar_doc(arquivo: UploadFile = File(...)) -> dict:
             "OCR está fora do escopo desta fase.",
         )
 
-    detectados = pipeline().analyze(sessao.tm.text)
+    detectados = detectar(sessao.tm.text)
     for i, sp in enumerate(detectados, 1):
         sid = f"s{i}"
         sessao.spans[sid] = SpanUI(
@@ -491,7 +514,7 @@ def analisar(
         )
 
     achados = sessao.conferir_antes_do_envio(
-        lambda texto, limiar: pipeline().analyze(texto, score_threshold=limiar)
+        lambda texto, limiar: detectar(texto, score_threshold=limiar)
     )
     if achados:
         # Entidade e posição, nunca o valor — ver `conferir_antes_do_envio`.
