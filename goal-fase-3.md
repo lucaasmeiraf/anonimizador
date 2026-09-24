@@ -318,9 +318,33 @@ silêncio.
       e com chave (`GET /api/analise/saude`), e sem ele a tela diz o motivo.
       A taxa de nomes escapados no aviso vem de `NOMES_ESCAPADOS_EM_50` em
       `app.js`, por modelo de NER, e **precisa ser remedida** quando o
-      detector mudar. Vista pelo usuário na tela em 2026-09-23. **Não
-      verificado:** um envio real de ponta a ponta — item 1 de
-      `PROXIMOS-PASSOS.md`.
+      detector mudar. Vista pelo usuário na tela em 2026-09-23.
+- [x] **Envio real de ponta a ponta.** Feito em 2026-09-23 com
+      `eval/datasets/contrato-000.pdf`, pelas mesmas rotas que a tela chama
+      (de dentro do container `ui`), depois de `llm-proof` aprovado nas duas
+      metades. Resultado:
+      - 50 trechos → 49 códigos; PDF e texto aprovados na verificação.
+        `anthropic/claude-sonnet-4.5` respondeu em 9,5 s (2678 tokens de
+        entrada, 447 de saída) citando 21 códigos, todos presentes no texto
+        enviado, e nenhum valor original.
+      - `envios` da sessão: só modelo, caracteres, tokens e duração.
+      - Logs do `analise` e do `ui` conferidos contra os 49 valores, os
+        códigos e trechos amostrados do texto enviado e da resposta: zero
+        ocorrências. O `analise` escreveu uma linha, com contagem e modelo.
+      - Um nome de ocorrência única desligado na revisão: o texto passou no
+        `verify_texto` (correto — ele confere o que foi marcado), e o
+        `/analisar` devolveu 409 com um achado `PERSON` exatamente sobre o
+        nome, sem o valor. `envios` vazio, nenhuma linha nova no `analise`.
+
+      **Não visto:** a resposta e o cartão de recusa **desenhados** na tela —
+      a verificação foi pela API. O cartão existe em `mostrarRecusaEnvio`.
+
+      Dois achados do envio, sem mudança de código: a cidade de residência do
+      contratado saiu legível (`LOCATION` nasce em `manter`, pela LAI — mas
+      para envio a terceiro é identificador indireto; levado ao item 3 de
+      `PROXIMOS-PASSOS.md`), e o nome da contratante, pessoa jurídica, foi
+      detectado como `PERSON` e virou código de pessoa (tarja a mais, não
+      vazamento).
 - [ ] **Os dois furos de detecção continuam.** `PERSON` escapa em ~1 documento
       a cada 50; identificador indireto por contexto não é detectado de forma
       alguma, e nenhum token o resolve. O gate de pré-envio **não** os cobre:

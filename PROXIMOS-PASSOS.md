@@ -17,24 +17,10 @@ Quando um item fechar, sai daqui e o registro vai para onde ele pertence
 ## O que bloqueia usar com documento real
 
 O fluxo de ponta a ponta existe: revisar → PDF (tarja ou código) → texto com
-código → envio a modelo externo. Os três itens abaixo são o que falta para ele
-poder receber um documento que não seja sintético.
-
-### 1. Um envio real ao modelo externo, com documento sintético
-
-**Por quê.** É o único caminho do sistema que faz conteúdo sair da máquina, e
-**nunca rodou de ponta a ponta**. Os testes usam um dublê do serviço
-`analise`; a tela foi vista, mas sem envio. A chave do OpenRouter entrou no
-`.env` em 2026-09-23.
-
-**Terminou quando:** com um PDF de `eval/datasets/`, pela tela, (a) a resposta
-aparece e usa os códigos; (b) `envios` na sessão registra modelo, caracteres e
-tokens, e **nada** do conteúdo; (c) o log do `analise` também não tem
-conteúdo; (d) um documento com um nome deliberadamente não marcado é
-**recusado** pela re-detecção, com o cartão "substituir todas as
-ocorrências", e nada sai. Custa crédito — poucos centavos por envio.
-
-**Fonte:** `goal-fase-3.md` §2.9.
+código → envio a modelo externo, e o envio real rodou em 2026-09-23 (o antigo
+item 1, registrado em `goal-fase-3.md` §2.9). Os dois itens abaixo são o que
+falta para ele poder receber um documento que não seja sintético. A numeração
+não foi refeita de propósito: o goal da fase cita estes itens pelo número.
 
 ### 2. Retenção no OpenRouter, fixada e verificada
 
@@ -67,7 +53,11 @@ memória (RN-07) e o enquadramento é do jurídico do cliente, não deste códig
 **Terminou quando:** há resposta por escrito de quem assina juridicamente
 sobre (a) o status do PDF com código e do texto com código, para quem guarda o
 original e para quem recebe; (b) o texto do aviso de envio na tela; (c) a
-frase comercial "o documento sai, mas pseudonimizado". E o `README.md`, a tela
+frase comercial "o documento sai, mas pseudonimizado"; (d) se `LOCATION` —
+que nasce em `manter` pela LAI — pode seguir legível **no envio a um
+terceiro**: no envio real de 2026-09-23 a cidade de residência do contratado
+saiu em claro, e para quem recebe isso é identificador indireto, não
+publicidade de ato. E o `README.md`, a tela
 (`index.html`, bloco `bloco-modo`) e `test_a_tela_afirma_a_irreversibilidade…`
 foram ajustados ao que a resposta disser.
 
