@@ -175,6 +175,13 @@ Duas consequências que valem repetir:
   mudança **jurídica**, não técnica. Ver seção 6.
 - Mexeu em `web/static/*` → o carimbo de versão em `raiz()` já invalida o
   cache; não reintroduzir referência sem `?v=`.
+- Rota nova que detecta, redige ou verifica → `def`, **não** `async def`, e
+  detecção sempre por `app.detectar`, nunca `pipeline().analyze` direto.
+  Trabalho de CPU dentro de `async def` para o servidor inteiro — medido em
+  2026-09-24: 60 s sem resposta a ninguém enquanto um PDF de 102 páginas era
+  lido. `detectar` serializa as chamadas, porque nem o Presidio nem o
+  pipeline do transformers se declaram seguros para uso concorrente.
+  `tests/test_envio_nao_trava.py` trava as duas coisas.
 
 ---
 
@@ -312,6 +319,7 @@ verificar licença — a lista de pendências já é grande o bastante.
 ```
 DEFEITOS.md                        defeitos abertos, com causa raiz quando há
 PROXIMOS-PASSOS.md                 a fila de trabalho, em ordem, com critério de fim
+HOMOLOGACAO.md                     quanto do escopo está pronto, e em que condições homologar
 goal-fase-0.md .. goal-fase-3.md   escopo e decisões por fase (fase 1 em andamento)
 goal-fase-2a.md                    recorte executável da Fase 2A: token + saída de texto
 goal-fase-4.md                     identidade, inquilino e trilha
@@ -322,7 +330,7 @@ anonimizador-poc/
   docs/01..07                      inventário, requisitos, configuração,
                                    implantação, política de LLM, resultados F0,
                                    modelo de produto (planos PF e empresa)
-  tests/                           334 testes (+9 marcados slow)
+  tests/                           399 testes (+9 marcados slow)
 ```
 
 `docs/02-requisitos.md` tem a tabela de requisitos normativos (RN-01..RN-07) e

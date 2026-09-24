@@ -1,0 +1,23 @@
+# Fim de linha: LF no repositório, sempre.
+#
+# O projeto roda inteiro em container Linux, mas é editado no Windows. Sem
+# esta regra, ~45 arquivos apareciam como modificados no `git status` só por
+# estarem em CRLF no disco e LF no repositório — e esse ruído escondia a
+# mudança de verdade (PROXIMOS-PASSOS.md, item 10).
+#
+# `text=auto` deixa o git decidir o que é texto; `eol=lf` fixa LF também na
+# cópia de trabalho, para o que é lido dentro do container (Makefile, .py,
+# .sh) não depender de como o Windows salvou o arquivo.
+* text=auto eol=lf
+
+# O único script que roda no Windows fica em CRLF, que é o que o PowerShell
+# antigo espera.
+*.ps1 text eol=crlf
+
+# Binários: nunca converter.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

@@ -131,9 +131,13 @@ erro é mais fácil de consertar:
   difícil.
 
 Por isso a configuração escolhida prefere errar para o lado de marcar demais.
-Medido no conjunto de testes: ela encontra **92,5%** dos nomes de pessoa, ao
-custo de que cerca de um terço do que ela marca não precisava ser marcado —
-e é exatamente isso que a tela existe para você corrigir.
+Medido no conjunto de testes: ela encontra **99,9%** dos nomes de pessoa, e
+cerca de 1 em cada 25 nomes que ela marca não precisava ser marcado — é
+exatamente isso que a tela existe para você corrigir.
+
+> São números de 50 documentos **sintéticos**, gerados para teste. O
+> desempenho nos documentos do seu órgão só se conhece medindo neles — e é
+> isso que a homologação faz.
 
 Se algo passou batido, você pode selecionar o trecho no documento e anonimizar
 só aquela ocorrência ou todas elas, ou digitar o valor no campo de busca. Antes
@@ -262,6 +266,8 @@ Esta lista é parte da ferramenta, não uma ressalva escondida no rodapé.
 | **Zera as propriedades do arquivo** | Autor, título, data de criação, programa que gerou. |
 | **Não desfaz** | Ver a primeira garantia. O que devolve o original é o original. |
 | **Não altera o layout** | Página, fontes e diagramação ficam idênticas. Isso é intencional. |
+| **Não tem login (ainda)** | Quem alcança a interface usa, e alcança qualquer documento em revisão. Por isso ela só escuta na própria máquina (`127.0.0.1`). Uso por várias pessoas num servidor compartilhado espera a Fase 4. |
+| **Documento longo leva minutos** | Medido com 102 páginas: cerca de 70 s para detectar e 45 s para conferir a cada aprovação. Um documento é detectado por vez — quem envia enquanto outro está sendo lido espera a vez, mas a interface não congela. |
 | **Identificador fictício sem rótulo pode escapar** | Um CPF ou CNPJ com dígito verificador inválido — comum em minuta, modelo e material de treinamento — só é reconhecido se houver uma palavra próxima que o identifique (`CPF:`, `CNPJ:`, `Chave PIX:`). Escrito sem pontuação e sem rótulo, ele é indistinguível de um número de protocolo, e a ferramenta o ignora de propósito, para não tarjar toda numeração do documento. |
 
 ---
@@ -328,7 +334,7 @@ O modelo leva cerca de 30 segundos para carregar na primeira subida.
 
 ```powershell
 .\run.ps1 ui-proof   # prova que a interface responde E que não há saída para a internet
-.\run.ps1 test       # 397 testes rápidos (mais 9 lentos, que carregam o modelo)
+.\run.ps1 test       # 399 testes rápidos (mais 9 lentos, que carregam o modelo)
 ```
 
 `run.ps1 ui` não abre o navegador sozinho: suba o comando, espere o modelo
@@ -380,6 +386,13 @@ documentada e medida antes de a seguinte começar.
 | **2A** — Código no lugar do nome | "dá para o documento continuar legível sem expor ninguém?" | ✅ concluída — saída de texto, sem chave e sem cofre |
 | **2B** — Reversibilidade sob chave | "dá para desfazer, com controle?" | ⛔ encerrada — guardar o original resolve, sem custo legal |
 | **3** — Perímetro de rede | "vale abrir a rede para análise por IA?" | 🔶 construída, com tela e envio real verificado — falta fixar a retenção no provedor e a confirmação jurídica |
+| **4** — Identidade, inquilino e trilha | "quem é você, e o que você pode ver?" | 🔶 iniciada — o banco existe; login, posse de documento e trilha ainda não |
+
+**Homologação.** Pronto para homologação **controlada**: uma pessoa por
+máquina, com a análise por IA desligada ou só com documento sintético.
+Homologação com várias pessoas num servidor compartilhado espera o login da
+Fase 4. As condições, o que foi medido e o que ainda bloqueia estão em
+[`HOMOLOGACAO.md`](HOMOLOGACAO.md).
 
 O que vem a seguir, em ordem e com o critério de "terminou", está em
 [`PROXIMOS-PASSOS.md`](PROXIMOS-PASSOS.md).
@@ -407,3 +420,4 @@ Nenhum documento real entra no ambiente de desenvolvimento.
 | **Quem decide o modelo de negócio** | [`docs/07-modelo-de-produto.md`](anonimizador-poc/docs/07-modelo-de-produto.md) — os dois planos, quem hospeda, e o que bloqueia a venda |
 | Quem escreve código | [`CLAUDE.md`](CLAUDE.md) — invariantes e regras de mudança |
 | Quem escolhe o que fazer em seguida | [`PROXIMOS-PASSOS.md`](PROXIMOS-PASSOS.md) — a fila, em ordem |
+| Quem vai homologar | [`HOMOLOGACAO.md`](HOMOLOGACAO.md) — quanto está pronto, em que condições homologar, e o que bloqueia |

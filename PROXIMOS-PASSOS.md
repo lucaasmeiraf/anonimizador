@@ -12,6 +12,10 @@ suficiente para escolher o próximo.
 Quando um item fechar, sai daqui e o registro vai para onde ele pertence
 (`DEFEITOS.md`, o goal da fase, o `git log`). Este arquivo não é histórico.
 
+Em que condições o sistema pode ir para homologação, e o que ainda bloqueia
+cada tipo de homologação, está em `HOMOLOGACAO.md` (avaliação de 2026-09-24).
+O item 10, ruído de fim de linha, fechou lá: `.gitattributes`.
+
 ---
 
 ## O que bloqueia usar com documento real
@@ -138,13 +142,6 @@ Sobra do D-03: `make test` desmarca os testes `slow` de propósito, e por isso
 eles ficaram vermelhos por meses sem ninguém ver. **Terminou quando** alguma
 coisa rodar `make test-all` sozinha — um hook de pre-push, um job agendado — e
 reclamar alto.
-
-### 10. Ruído de fim de linha no `git status`
-
-~45 arquivos aparecem como modificados só porque estão em CRLF no disco e LF
-no repositório. Esconde mudança de verdade e obriga a filtrar a cada commit.
-**Terminou quando** houver `.gitattributes` com `* text=auto eol=lf` (ou a
-decisão contrária registrada) e o `git status` limpo mostrar só mudança real.
 
 ### 11. Docstring velha em `Sessao.gerar_texto_pseudonimizado`
 
