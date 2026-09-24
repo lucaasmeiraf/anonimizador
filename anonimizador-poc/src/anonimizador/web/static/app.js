@@ -924,12 +924,32 @@ function mostrarResultado() {
 
       const onde = document.createElement("div");
       onde.className = "onde";
+      const paginas = o.paginas || [];
       onde.textContent = o.visivel_no_texto
-        ? `${o.ocorrencias_no_texto} ocorrência(s) legíveis no texto`
+        ? `${o.ocorrencias_no_texto} ocorrência(s) legíveis no texto` +
+          (paginas.length
+            ? ` — página${paginas.length > 1 ? "s" : ""} ${paginas.join(", ")}`
+            : "")
         : `só na estrutura do PDF${o.objeto ? " — " + o.objeto : ""} ` +
           `(${o.vetores.join(", ")})`;
 
       card.append(quem, onde);
+
+      // Atalho para a página, no painel Anonimizado: é lá que o trecho
+      // legível pode ser selecionado e marcado à mão, quando "tarjar todas"
+      // não é o conserto certo.
+      if (o.visivel_no_texto && paginas.length) {
+        const ir = document.createElement("div");
+        ir.className = "ir-paginas";
+        for (const n of paginas) {
+          const b = document.createElement("button");
+          b.className = "secundario";
+          b.textContent = `Ir para a página ${n}`;
+          b.addEventListener("click", () => irParaPagina(n));
+          ir.appendChild(b);
+        }
+        card.appendChild(ir);
+      }
 
       if (o.visivel_no_texto) {
         const b = document.createElement("button");
@@ -1359,6 +1379,13 @@ function voltarAoInicio() {
  * altura, e sobem juntos por construção. Nada para espelhar, nada para
  * destravar, nada que possa sair de sincronia. */
 function sincronizarRolagem() {}
+
+/* `n` como o servidor e o rótulo contam: a partir de 1. `data-n` guarda o
+ * índice a partir de 0, que é o da rota de imagem. */
+function irParaPagina(n) {
+  const alvo = $("rolagem-dir").querySelector(`.pagina[data-n="${n - 1}"]`);
+  alvo?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function escapar(s) {
   const d = document.createElement("div");

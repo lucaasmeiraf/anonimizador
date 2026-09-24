@@ -892,6 +892,43 @@ def test_pagina_inexistente_da_404(cliente, pdf):
 # --------------------------------------------------------------------------
 # Diagnóstico do vazamento — o que a tela diz ao revisor
 # --------------------------------------------------------------------------
+def test_dissecacao_diz_em_que_pagina_o_valor_sobreviveu(cliente, tmp_path):
+    """"1 ocorrência legível no texto" sem dizer onde não deixa agir.
+
+    O caso típico: o mesmo valor é reconhecido na página 1 e não na 3, porque
+    o contexto em volta levou o detector a outra classificação. Num documento
+    longo, sem a página, o usuário caça o valor no escuro.
+    """
+    pdf = fitz.open()
+    for linha in (
+        "Local da audiencia: Carvalho de Novais.",
+        "Pagina sem o valor.",
+        "Remetido de Carvalho de Novais nesta data.",
+    ):
+        pdf.new_page().insert_text((56, 64), linha, fontname="helv", fontsize=9)
+    caminho = tmp_path / "tres.pdf"
+    pdf.save(str(caminho), garbage=4, deflate=True)
+    pdf.close()
+
+    doc = _enviar(cliente, caminho, nome="tres.pdf")
+    sessao = app_mod.sessoes.obter(doc["doc_id"])
+    valor = "Carvalho de Novais"
+    inicio = sessao.tm.text.find(valor)
+    sessao.spans.clear()
+    sessao.spans["s1"] = SpanUI(
+        id="s1", entity="PERSON", score=1.0,
+        start=inicio, end=inicio + len(valor), valor=valor,
+    )
+
+    relatorio = sessao.aprovar()
+    assert relatorio["verificacao_ok"] is False
+
+    ocorrencia = relatorio["ocorrencias"][0]
+    assert ocorrencia["visivel_no_texto"] is True
+    assert ocorrencia["paginas"] == [3]
+    assert ocorrencia["ocorrencias_no_texto"] == 1
+
+
 def test_dissecacao_acha_valor_que_sobreviveu_sem_pontuacao(cliente, tmp_pdf):
     """O segundo defeito de 2026-09-05, e o mais caro dos dois.
 

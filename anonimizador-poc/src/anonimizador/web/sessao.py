@@ -861,13 +861,18 @@ class Sessao:
         if not leaks:
             return []
 
-        texto_final = ""
+        # Por página, e não o texto inteiro concatenado: "1 ocorrência legível"
+        # sem dizer onde deixava o usuário caçando o valor num documento de
+        # dezenas de páginas. O caso típico é o mesmo valor tarjado na página
+        # 1 e não reconhecido na 7 — o detector classificou o contexto de outro
+        # jeito —, e a página é exatamente o que falta para achá-lo.
+        textos_pagina: list[str] = []
         try:
             d = fitz.open(str(caminho_redigido))
             try:
-                texto_final = "\n".join(
+                textos_pagina = [
                     d.load_page(i).get_text() for i in range(d.page_count)
-                )
+                ]
             finally:
                 d.close()
         except Exception:  # noqa: BLE001
@@ -884,20 +889,27 @@ class Sessao:
         # A classificação errada manda o usuário para o caminho oposto do
         # conserto: ela diz "defeito do redator, você não conserta sozinho",
         # quando a verdade era "outra ocorrência, tarje todas em um clique".
-        texto_norm = _normalizar_verificacao(texto_final)
-        texto_ids = SEPARADORES_DE_ID.sub("", texto_final)
+        paginas_norm = [
+            (_normalizar_verificacao(t), SEPARADORES_DE_ID.sub("", t))
+            for t in textos_pagina
+        ]
 
-        def _achar(valor: str) -> int:
-            """Quantas vezes o valor aparece no texto, em qualquer forma."""
-            for forma in _variantes(valor):
-                alvo = texto_ids if forma.isdigit() else texto_norm
-                if forma in alvo:
-                    return alvo.count(forma)
-            return 0
+        def _achar(valor: str) -> dict[int, int]:
+            """Página (1-based) -> quantas vezes o valor aparece nela, em
+            qualquer forma. Só as páginas em que aparece."""
+            achado: dict[int, int] = {}
+            for numero, (texto_norm, texto_ids) in enumerate(paginas_norm, 1):
+                for forma in _variantes(valor):
+                    alvo = texto_ids if forma.isdigit() else texto_norm
+                    if forma in alvo:
+                        achado[numero] = alvo.count(forma)
+                        break
+            return achado
 
         por_valor: dict[str, dict] = {}
         for leak in leaks:
-            ocorrencias = _achar(leak.valor)
+            por_pagina = _achar(leak.valor)
+            ocorrencias = sum(por_pagina.values())
             item = por_valor.setdefault(
                 leak.valor,
                 {
@@ -907,6 +919,7 @@ class Sessao:
                     "objeto": "",
                     "visivel_no_texto": ocorrencias > 0,
                     "ocorrencias_no_texto": ocorrencias,
+                    "paginas": sorted(por_pagina),
                 },
             )
             if leak.vetor not in item["vetores"]:
