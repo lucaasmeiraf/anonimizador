@@ -43,10 +43,15 @@ Em Linux/macOS/WSL, `make build`, `make eval` etc. — os alvos são os mesmos.
 ```
 
 O modelo leva ~30 s para carregar na subida; `docker compose logs -f ui`
-acompanha. O fluxo é: enviar PDF → revisar as tarjas lado a lado → corrigir
-o que estiver errado → **Aprovar**, que só então gera o PDF, verifica em 10
-vetores e libera o download. Se a verificação reprovar, não existe arquivo
-para baixar.
+acompanha. O fluxo segue as etapas da barra do topo: **Enviar** (com o
+objetivo do documento, que pré-seleciona tarja ou código) → **Revisar** (um
+documento com as marcações coloridas por categoria, lista por categoria e
+valor, navegação por teclado) → **Verificar** (a verificação da aprovação
+roda de novo a cada edição, via `POST /preverificar`, e aponta o que ainda
+ficaria legível) → **Exportar**, que só então gera o PDF, verifica em 10
+vetores (11 com código) e libera o download. Se a verificação reprovar, não
+existe arquivo para baixar. O passo a passo da tela está em
+[`docs/04-implantacao.md`](docs/04-implantacao.md), Passo 10b.
 
 > **Sobre a rede.** O serviço `ui` — que faz toda a detecção e redação —
 > roda numa rede `internal: true`, sem rota para fora. O `ui-proxy` é o
@@ -152,7 +157,9 @@ vez de vazamento silencioso.
 | `src/anonimizador/verifier.py` | verificação em 10 vetores |
 | `src/anonimizador/politica.py` | `PerfilPolitica` — operador por entidade |
 | `src/anonimizador/web/app.py` | API da interface de revisão |
-| `src/anonimizador/web/sessao.py` | estado do documento e o gate de download |
+| `src/anonimizador/web/sessao.py` | estado do documento, pré-verificação e o gate de download |
+| `src/anonimizador/web/static/` | a tela: envio, revisão e exportação (HTML, CSS e JS, sem dependência externa) |
+| `src/anonimizador/web/analise.py` | serviço separado que envia o texto com código ao modelo externo |
 | `src/anonimizador/web/forward.py` | encaminhador TCP — a única peça com rede |
 | `src/anonimizador/web/prova_rede.py` | prova, de dentro do `ui`, que não há egress |
 | `eval/generate_corpus.py` | corpus sintético + gabarito exato |

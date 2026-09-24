@@ -228,7 +228,7 @@ produto de verdade.
 Na pasta `anonimizador-poc`:
 
 ```powershell
-.un.ps1 ui          # Windows
+.\run.ps1 ui          # Windows
 make ui               # Linux, macOS, WSL
 ```
 
@@ -258,32 +258,57 @@ as vezes dela.
 
 ### 3. Usar
 
-1. **Arraste um PDF** para a área central, ou clique para escolher. Só PDF com
-   texto — digitalização sem OCR é recusada com explicação, porque uma tela
-   vazia faria você concluir que o documento está limpo.
-2. **Escolha o que fica no lugar do dado** — primeiro bloco da barra lateral
-   direita:
-   - **Tarja preta**: o valor some e o espaço fica coberto.
-   - **Código no lugar** (`[P-7F3A]`): o valor some e um código ocupa o lugar,
-     preservando que havia um ator, de que tipo, e que é o mesmo ator dos
-     outros trechos. É o formato para mandar a uma análise automatizada.
+A barra do topo mostra as etapas — **Enviar → Revisar → Verificar →
+Exportar** — e, na revisão, o botão principal, sempre visível.
 
-   Nos dois casos o valor é removido do arquivo, sem chave e sem volta.
-3. **Revise.** Clique numa tarja para desligá-la; digite ou selecione um
-   trecho que faltou; ligue e desligue classes inteiras na lista.
-4. **Aprove.** O PDF só é gerado nesse momento, e só é liberado para download
-   se passar na verificação — 10 vetores, ou 11 quando há código.
+1. **Enviar.** Escolha para que é o documento — *Publicar ou compartilhar*
+   (tarja preta) ou *Enviar para análise por IA* (código no lugar do dado) —
+   e clique em **Selecionar PDF**, arraste o arquivo para qualquer ponto da
+   janela, ou cole com `Ctrl+V` (`Ctrl+O` abre o seletor). A escolha só define
+   o formato inicial.
+   - Digitalização sem texto é recusada com explicação, porque uma tela vazia
+     faria você concluir que o documento está limpo. PDF com senha também é
+     recusado; salve uma cópia sem a proteção.
+   - PDF com algumas páginas digitalizadas segue para a revisão, com aviso de
+     quais páginas não puderam ser analisadas.
+   - "Como garantimos isso", abaixo do cartão, reúne os detalhes técnicos:
+     modelo de detecção, camadas da verificação e o que muda no PDF.
+2. **Revisar.** O documento aparece com cada dado marcado pela cor da
+   categoria. Na barra acima dele: *Anonimizado*, *Original* ou *Comparar*
+   (lado a lado), *Ver como ficará* (`P`) e zoom. No painel à direita:
+   - **Detecções** — categorias em português, agrupadas, com a contagem
+     "X de Y". Expanda uma categoria para ver os valores e as páginas; clique
+     num valor para ir até ele. `J`/`K` (ou `↓`/`↑`) andam entre as
+     ocorrências e `Espaço` liga ou desliga a que está em foco. O campo
+     *Buscar ou adicionar termo* acha uma detecção ou anonimiza um termo em
+     todo o documento.
+   - **Ajustes** — o formato de substituição, tarja ou código. Nos dois casos
+     o valor é removido do arquivo, sem chave e sem volta.
+
+   Clique numa marcação para *Não anonimizar esta*, *Não anonimizar nenhuma
+   igual* ou *Mudar categoria*. Selecione um trecho do documento para
+   anonimizá-lo. O `?` no topo lista os atalhos.
+3. **Verificar.** A cada alteração, a verificação que libera o arquivo roda de
+   novo sobre a versão atual, e o selo no topo do painel diz se algum dado
+   marcado ainda ficaria legível. Clique nele para ver onde, com *Ir para a
+   página* e *Anonimizar todas*. Enquanto houver pendência, o botão principal
+   vira "Revisar N pendências".
+4. **Exportar.** Na aba *Exportar*: o checklist da verificação, o que você
+   vai receber (PDF anonimizado, texto com códigos para IA, envio para
+   análise por IA quando `make ui-llm` está no ar) e o que muda no PDF além
+   dos dados. **Gerar e baixar** gera o arquivo do zero e só o libera se ele
+   passar na verificação — 10 vetores, ou 11 quando há código.
 
 > **Valor curto não comporta código.** `[CEP-2C81]` ocupa 48,0pt e um CEP
 > deixa 43,0pt de espaço; `[DATA-9E44]` ocupa 53,0pt contra 45,0pt de
-> `12/03/2026`. Em modo código, deixe `CEP` e `DATE_TIME` em tarja na lista —
-> a tela avisa. Sem isso o documento é **reprovado inteiro** na aprovação, de
-> propósito: a alternativa seria entregar a linha deformada em silêncio.
+> `12/03/2026`. Desde 2026-09-23 esses trechos saem em **tarja preta** em vez
+> de reprovar o documento, e a tela diz quantos são — por categoria, na aba
+> *Ajustes* — antes de você exportar. O texto para IA usa código em todos.
 
 ### 4. Derrubar
 
 ```powershell
-.un.ps1 ui-down     # ou:  docker compose down
+.\run.ps1 ui-down     # ou:  docker compose down
 ```
 
 ### Quando não abre

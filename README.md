@@ -82,25 +82,45 @@ teste** se conseguir.
 
 Depois de gerar o arquivo protegido, uma segunda etapa **reabre o resultado do
 zero** e procura cada valor que deveria ter sido removido, em dez lugares
-diferentes do arquivo — inclusive na leitura crua dos bytes, e usando uma
-biblioteca de leitura diferente da que fez a remoção.
+diferentes do arquivo — onze quando há código no lugar do dado, para conferir
+também que todo código foi escrito —, inclusive na leitura crua dos bytes, e
+usando uma biblioteca de leitura diferente da que fez a remoção.
 
-Se qualquer valor sobrevive em qualquer um desses dez lugares, **não existe
+Se qualquer valor sobrevive em qualquer um desses lugares, **não existe
 botão de download.** O arquivo reprovado é apagado, e a tela explica o que
-sobreviveu e onde.
+sobreviveu, em que página, e oferece o conserto.
 
 ---
 
 ## Como funciona, na prática
 
 ```
-   1. Enviar          2. Revisar             3. Aprovar        4. Baixar
-   ──────────         ──────────             ─────────         ────────
-   Você envia    →    Original e proposta →  Você assina   →   Só sai se a
-   o PDF              lado a lado.           embaixo           conferência
-                      Você liga e desliga                      aprovar
-                      cada tarja
+   1. Enviar          2. Revisar             3. Verificar        4. Exportar
+   ──────────         ──────────             ───────────         ──────────
+   Você diz para  →   O documento, com   →   A conferência   →   Só sai se a
+   que é o            cada dado marcado      roda a cada         conferência
+   documento e        pela cor da            alteração e         final aprovar
+   envia o PDF        categoria              aponta o que
+                                             ainda está legível
 ```
+
+Ao enviar, você escolhe **para que é o documento**: publicar ou compartilhar
+(tarja preta) ou enviar para análise por IA (código no lugar do dado). A
+escolha só define o formato inicial; ele pode ser trocado na revisão.
+
+Na revisão você vê **um** documento, com cada dado marcado pela cor da
+categoria, e pode alternar para o original ou para os dois lado a lado. A
+lista ao lado agrupa o que foi encontrado por categoria e por valor, e dá
+para ir de uma ocorrência à seguinte sem rolar à procura (`J`/`K` no
+teclado). Um clique numa marcação oferece não anonimizar aquela, não
+anonimizar nenhuma igual, ou corrigir a categoria. "Ver como ficará" mostra a
+tarja ou o código exatamente como vão sair no PDF.
+
+**A conferência não espera o fim.** A cada alteração, a mesma verificação que
+libera o arquivo roda de novo sobre a versão atual, e um selo no topo diz se
+algum dado marcado ainda ficaria legível — com a página e um botão para
+resolver. Assim, o "sobrou uma ocorrência" aparece enquanto você revisa, e
+não no clique final.
 
 **A revisão humana é o centro do produto, não um detalhe.** A detecção
 automática erra nos dois sentidos, e a ferramenta é desenhada em torno de qual
@@ -115,9 +135,12 @@ Medido no conjunto de testes: ela encontra **92,5%** dos nomes de pessoa, ao
 custo de que cerca de um terço do que ela marca não precisava ser marcado —
 e é exatamente isso que a tela existe para você corrigir.
 
-Se algo passou batido, você pode selecionar o trecho na tela e tarjar só
-aquela ocorrência, ou digitar um valor e tarjar todas as ocorrências dele no
-documento.
+Se algo passou batido, você pode selecionar o trecho no documento e anonimizar
+só aquela ocorrência ou todas elas, ou digitar o valor no campo de busca. Antes
+de você confirmar, a tela diz quantas ocorrências serão marcadas e quantas a
+conferência vai procurar — uma data escrita `18/02/2026` num lugar e
+`18.02.2026` noutro é a mesma para a conferência, e a tela avisa quando a
+busca não cobre todas.
 
 ### Duas saídas, para dois usos diferentes
 
@@ -135,6 +158,12 @@ Por isso a ferramenta produz dois arquivos a partir da mesma revisão:
 | Serve para | publicar, responder LAI, arquivar | analisar, resumir, submeter a uma IA |
 | Dá para seguir o mesmo ator no documento? | não | sim |
 | É reversível? | **não** | **não** |
+
+O PDF também pode sair com o código no lugar do valor, em vez da tarja — é a
+escolha "Código" da revisão. Onde o código não cabe no espaço do valor (um CEP,
+por exemplo, é mais curto que `[CEP-2C81]`), aquele trecho sai em tarja preta, e
+a tela diz quantos foram antes de você aprovar. O texto para IA usa código em
+todos.
 
 O código é sorteado, não calculado a partir do nome, e o mapa que os liga é
 descartado assim que o arquivo fica pronto. **Não existe chave, não guardamos
@@ -164,7 +193,15 @@ cp .env.example .env      # cole sua chave do OpenRouter em OPENROUTER_API_KEY
 make ui-llm
 ```
 
-Sem chave, o recurso simplesmente não funciona — não há envio silencioso.
+Sem chave, o recurso simplesmente não funciona — não há envio silencioso. Na
+tela, o envio fica na aba **Exportar**, na opção "Enviar para análise por IA":
+o texto aparece inteiro para leitura, o aviso vem antes do botão, e cada envio
+exige marcar de novo a confirmação.
+
+O caminho de ponta a ponta foi exercitado com um documento sintético em
+2026-09-23: a resposta do modelo usou os códigos, e o registro do envio e os
+logs não guardaram conteúdo. Um nome deixado sem marcação de propósito fez o
+envio ser recusado, sem que nada saísse.
 
 **Antes de enviar, três travas correm nesta ordem:** o texto precisa ter
 passado pela conferência; a detecção roda **de novo** sobre o texto de saída,
@@ -217,7 +254,9 @@ Esta lista é parte da ferramenta, não uma ressalva escondida no rodapé.
 | Limitação | O que significa |
 |---|---|
 | **Não lê documento digitalizado** | Se o PDF é uma foto ou uma digitalização sem texto embutido, não há texto para remover. A ferramenta recusa o arquivo em vez de mostrar uma tela vazia que pareceria "nada encontrado". |
-| **Invalida assinatura digital** | Alterar o arquivo quebra a assinatura — é matemático, não tem contorno. Documento de órgão público costuma vir assinado. *Ainda não testado com documento assinado real.* |
+| **Não lê página digitalizada dentro de um PDF com texto** | O documento segue para a revisão, mas as páginas sem texto não são analisadas nem conferidas — o que estiver escrito nelas como imagem sai intacto. A revisão avisa quais são. |
+| **Não abre PDF protegido por senha** | O arquivo é recusado sem ser guardado. É preciso salvar uma cópia sem a proteção antes. |
+| **Invalida assinatura digital** | Alterar o arquivo quebra a assinatura — é matemático, não tem contorno. Documento de órgão público costuma vir assinado; quando o PDF tem assinatura, o aviso aparece na hora de exportar. *Ainda não testado com documento assinado real.* |
 | **Remove todos os links** | Inclusive os inofensivos. |
 | **Apaga o sumário inteiro** | Não só as entradas que continham dado pessoal. |
 | **Zera as propriedades do arquivo** | Autor, título, data de criação, programa que gerou. |
@@ -289,7 +328,7 @@ O modelo leva cerca de 30 segundos para carregar na primeira subida.
 
 ```powershell
 .\run.ps1 ui-proof   # prova que a interface responde E que não há saída para a internet
-.\run.ps1 test       # 334 testes
+.\run.ps1 test       # 397 testes rápidos (mais 9 lentos, que carregam o modelo)
 ```
 
 `run.ps1 ui` não abre o navegador sozinho: suba o comando, espere o modelo
@@ -310,8 +349,8 @@ tela, escolher entre tarja e código, e o que fazer quando não abre — está e
            │
            ▼
        resolução de conflitos ──► REVISÃO HUMANA ──► remoção + saneamento
-       (checksum vence                                      │
-        estatística)                                        ▼
+       (checksum vence            (pré-verificação           │
+        estatística)               a cada alteração)         ▼
                                             conferência independente, 10 vetores
                                                             │
                                           aprovou? ──► download   reprovou? ──► apagado
@@ -340,7 +379,7 @@ documentada e medida antes de a seguinte começar.
 | **1** — Interface de revisão | "uma pessoa consegue confiar e assinar embaixo?" | 🔶 quase concluída — falta medir o gate de usabilidade com pessoas reais |
 | **2A** — Código no lugar do nome | "dá para o documento continuar legível sem expor ninguém?" | ✅ concluída — saída de texto, sem chave e sem cofre |
 | **2B** — Reversibilidade sob chave | "dá para desfazer, com controle?" | ⛔ encerrada — guardar o original resolve, sem custo legal |
-| **3** — Perímetro de rede | "vale abrir a rede para análise por IA?" | 🔶 construída, com tela — falta um envio real verificado, a retenção no provedor e a confirmação jurídica |
+| **3** — Perímetro de rede | "vale abrir a rede para análise por IA?" | 🔶 construída, com tela e envio real verificado — falta fixar a retenção no provedor e a confirmação jurídica |
 
 O que vem a seguir, em ordem e com o critério de "terminou", está em
 [`PROXIMOS-PASSOS.md`](PROXIMOS-PASSOS.md).
