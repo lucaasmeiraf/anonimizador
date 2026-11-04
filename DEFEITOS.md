@@ -8,13 +8,70 @@ Limitação conhecida e aceita **não** entra aqui: essa vai para a tabela "O qu
 ele não faz" do `README.md`, que é onde o cliente lê. A diferença é intenção —
 o que está abaixo ninguém decidiu que ficaria assim.
 
-A lista dos fechados fica logo abaixo e é curta de propósito: serve para não
+A lista dos fechados fica no fim e é curta de propósito: serve para não
 reabrir a mesma investigação, e some quando deixar de ser útil. Quem quiser a
 história completa tem o `git log`, que é onde ela mora.
 
 ---
 
-## Nenhum defeito aberto
+## D-04 — Exposição pública: falta defesa de perímetro
+
+**Gravidade: alta no dia em que a porta sair de `127.0.0.1`. Nenhuma antes
+disso.** Achado em 2026-11-03, avaliando a hipótese de hospedar num VPS.
+
+Hoje a segurança do perímetro é o endereço: o `ui-proxy` publica em
+`127.0.0.1:8000`, então só quem está na máquina alcança. Tudo abaixo é o que
+falta para a porta poder ser pública — e **nada disso substitui a Fase 4**,
+que é quem resolve *quem é você*.
+
+### Corrigido em parte
+
+`forward.py` abria **três threads por conexão** (uma que atende, duas que
+bombeiam), sem teto e sem timeout nenhum. Bastavam conexões TCP ociosas — sem
+falar HTTP, sem credencial — para esgotar threads e o serviço parar de
+responder.
+
+Ganhou teto de conexões (`ANON_PROXY_MAX_CONEXOES`, 64) e espera pelo
+primeiro byte (`ANON_PROXY_ESPERA_INICIAL`, 15 s). Só o primeiro byte é
+cronometrado: depois dele o silêncio é legítimo, porque a detecção de um
+documento de 102 páginas leva 74 s com o cliente calado esperando a resposta.
+`tests/test_forward_recursos.py` trava os quatro comportamentos.
+
+**O limite, dito porque a correção não resolve o problema:** com 64 vagas e
+15 s de espera, um atacante que sustente ~4 conexões por segundo mantém o
+teto cheio. O que a correção compra é **degradar previsivelmente** em vez de
+morrer — não imunidade. Limite por IP é o que falta, e ele não mora aqui.
+
+### Aberto
+
+1. **Nenhum limite de taxa, em lugar nenhum.** Nem por IP, nem por sessão,
+   nem no upload. Um documento de 102 páginas consumiu 3,1 GB; alguns PDFs de
+   50 MB em paralelo derrubam o container por memória. O `MAX_BYTES` limita
+   cada requisição e nada limita o conjunto.
+
+2. **Nenhum cabeçalho de segurança.** Sem CSP, `X-Frame-Options`,
+   `X-Content-Type-Options` nem `Referrer-Policy`. XSS hoje está barrado por
+   construção — conferido em 2026-11-03: todo dado vindo do documento entra no
+   DOM por `textContent`, e os `innerHTML` com conteúdo usam `escapar()`. CSP
+   é a defesa que sobrevive ao erro futuro de alguém, não a atual.
+
+3. **Sem TLS.** Hoje é HTTP em `127.0.0.1`, que é seguro justamente por não
+   sair da máquina.
+
+### Onde isso se resolve
+
+Limite por IP, timeout de requisição, tamanho de corpo e TLS são trabalho de
+**proxy reverso na frente** (nginx, Caddy), não de código Python. Enfiar isso
+no `forward.py` contraria a razão de ele existir: o único processo com saída
+de rede é pequeno o bastante para ser lido inteiro numa sentada, e sem árvore
+de dependências.
+
+A decisão que falta antes de hospedar está em `HOMOLOGACAO.md` §4: o cenário
+"servidor compartilhado na rede" continua na tabela **"Não — ainda não"**,
+bloqueado por login, posse de documento e TLS — Fase 4, Blocos 2 e 3.
+
+---
+
 
 ---
 

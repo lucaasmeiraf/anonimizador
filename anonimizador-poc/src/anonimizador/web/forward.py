@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import socket
 import threading
 
@@ -64,6 +65,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s forward: %(message)s
 log = logging.getLogger("forward")
 
 BUFFER = 64 * 1024
+
+# Teto de conexões simultâneas. Cada conexão custa TRÊS threads (uma que
+# atende e duas que bombeiam), então sem teto o processo morre por exaustão —
+# e para derrubá-lo bastam conexões TCP ociosas, sem falar HTTP e sem
+# credencial nenhuma.
+#
+# Em `127.0.0.1` isso nunca importou: só o dono da máquina conecta. O teto
+# existe para o dia em que a porta estiver publicada, e o que ele compra é
+# **degradar previsivelmente** em vez de parar de responder.
+MAX_CONEXOES = int(os.getenv("ANON_PROXY_MAX_CONEXOES", "64"))
+
+# Tempo que uma conexão tem para dizer a primeira palavra.
+#
+# Só o PRIMEIRO byte é cronometrado, e isso é deliberado: um cliente HTTP
+# real manda a requisição assim que conecta, enquanto uma requisição legítima
+# pode ficar MINUTOS sem tráfego depois disso — a detecção de um documento de
+# 102 páginas levou 74 s, e durante esse tempo o lado do cliente está calado,
+# esperando a resposta. Cronometrar o fluxo todo mataria justamente o caso
+# pesado que o produto precisa atender.
+ESPERA_PRIMEIRO_BYTE = float(os.getenv("ANON_PROXY_ESPERA_INICIAL", "15"))
 
 
 def _bombear(origem: socket.socket, destino: socket.socket) -> None:
@@ -85,13 +106,43 @@ def _bombear(origem: socket.socket, destino: socket.socket) -> None:
             pass
 
 
+def _esperar_primeira_palavra(cliente: socket.socket) -> bytes | None:
+    """Lê o primeiro trecho do cliente, ou devolve ``None`` se ele ficar calado.
+
+    É o que separa um navegador de uma conexão aberta só para ocupar recurso.
+    Devolve os bytes lidos para que sejam repassados adiante — sem isso, a
+    conferência comeria o início da requisição.
+    """
+    try:
+        cliente.settimeout(ESPERA_PRIMEIRO_BYTE)
+        dados = cliente.recv(BUFFER)
+    except OSError:
+        return None
+    finally:
+        # Volta ao modo bloqueante: daqui em diante o silêncio é legítimo.
+        try:
+            cliente.settimeout(None)
+        except OSError:
+            pass
+    return dados or None
+
+
 def _atender(cliente: socket.socket, destino_host: str, destino_porta: int) -> None:
+    primeiro = _esperar_primeira_palavra(cliente)
+    if primeiro is None:
+        # Conectou e não falou. Sem conteúdo nenhum para registrar — nem
+        # haveria: este processo não loga conteúdo (ver o cabeçalho).
+        cliente.close()
+        return
+
     alvo = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         alvo.connect((destino_host, destino_porta))
+        alvo.sendall(primeiro)
     except OSError as exc:
         log.warning("destino %s:%s indisponível: %s", destino_host, destino_porta, exc)
         cliente.close()
+        alvo.close()
         return
 
     ida = threading.Thread(target=_bombear, args=(cliente, alvo), daemon=True)
@@ -104,7 +155,13 @@ def _atender(cliente: socket.socket, destino_host: str, destino_porta: int) -> N
     alvo.close()
 
 
-def servir(escuta_host: str, escuta_porta: int, destino: str) -> None:
+def servir(
+    escuta_host: str,
+    escuta_porta: int,
+    destino: str,
+    max_conexoes: int = MAX_CONEXOES,
+    pronto: threading.Event | None = None,
+) -> None:
     destino_host, _, porta_txt = destino.rpartition(":")
     destino_porta = int(porta_txt)
 
@@ -112,13 +169,32 @@ def servir(escuta_host: str, escuta_porta: int, destino: str) -> None:
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((escuta_host, escuta_porta))
     srv.listen(128)
-    log.info("%s:%s -> %s:%s", escuta_host, escuta_porta, destino_host, destino_porta)
+    if pronto is not None:
+        # Só para os testes: dizer que a porta já aceita, sem dormir e torcer.
+        pronto.set()
+    log.info(
+        "%s:%s -> %s:%s (teto %d conexões)",
+        escuta_host, escuta_porta, destino_host, destino_porta, max_conexoes,
+    )
+
+    vagas = threading.Semaphore(max_conexoes)
+
+    def atender_e_liberar(cliente: socket.socket) -> None:
+        try:
+            _atender(cliente, destino_host, destino_porta)
+        finally:
+            vagas.release()
 
     while True:
         cliente, _ = srv.accept()
-        threading.Thread(
-            target=_atender, args=(cliente, destino_host, destino_porta), daemon=True
-        ).start()
+        if not vagas.acquire(blocking=False):
+            # Lotado. Fecha na hora em vez de enfileirar: enfileirar é o que
+            # transforma pico em queda, porque a fila cresce sem limite e o
+            # cliente já desistiu quando sua vez chega.
+            log.warning("teto de %d conexões atingido; recusando", max_conexoes)
+            cliente.close()
+            continue
+        threading.Thread(target=atender_e_liberar, args=(cliente,), daemon=True).start()
 
 
 def main() -> int:
