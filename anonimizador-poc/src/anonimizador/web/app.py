@@ -13,21 +13,23 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import fitz  # PyMuPDF
 import httpx
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import config
+from .. import config, db
 from ..pipeline import DetectionPipeline
 from ..pdf_redactor import PseudonimoImpossivelNoPDF
 from ..politica import PerfilPolitica, PoliticaInvalida
+from . import auth
 from .sessao import (
     DocumentoIlegivel,
     PdfProtegido,
@@ -56,6 +58,33 @@ MAX_BYTES = int(os.getenv("ANON_MAX_UPLOAD", str(50 * 1024 * 1024)))
 # 502 — nunca tenta falar direto com a internet.
 ANALISE_URL = os.getenv("ANON_ANALISE_URL", "http://analise:8100").rstrip("/")
 ANALISE_TIMEOUT = float(os.getenv("ANON_ANALISE_TIMEOUT", "180"))
+
+# --------------------------------------------------------------------------
+# Modo de acesso — Bloco 2 da Fase 4
+# --------------------------------------------------------------------------
+# O sistema tem DOIS modos legítimos, e a diferença não é de conveniência:
+#
+#   * **local** (padrão): a porta sai em `127.0.0.1` e o perímetro É o
+#     endereço — só quem está na máquina alcança. É o produto homologado hoje
+#     (`HOMOLOGACAO.md`): uma pessoa, uma máquina, sem login.
+#
+#   * **com login** (`ANON_EXIGIR_LOGIN=1`): a porta pode ser pública, e aí
+#     quem é você passa a ser pergunta que o sistema precisa responder.
+#
+# A chave é um interruptor explícito, e não detecção automática, porque
+# adivinhar errado aqui tem um lado catastrófico: servir o documento de todos
+# para qualquer um. Quem publica a porta liga o interruptor; o padrão nunca
+# "descobre" que agora pode ficar aberto.
+EXIGIR_LOGIN = os.getenv("ANON_EXIGIR_LOGIN", "").strip() in ("1", "true", "sim")
+
+COOKIE_SESSAO = "anon_sessao"
+COOKIE_CSRF = "anon_csrf"
+CABECALHO_CSRF = "x-csrf-token"
+
+# `Secure` no cookie. Padrão ligado — e funciona no teste local porque o
+# navegador trata `127.0.0.1` como contexto seguro mesmo em HTTP. Só desligar
+# para depurar atrás de um proxy que termine TLS de forma esquisita.
+COOKIE_SEGURO = os.getenv("ANON_COOKIE_INSEGURO", "").strip() not in ("1", "true")
 
 sessoes = Sessoes(RAIZ_SESSOES)
 _pipeline: DetectionPipeline | None = None
@@ -94,6 +123,29 @@ async def ciclo_de_vida(_app: FastAPI):
     # Sobrou documento em claro de uma execução anterior? Vai embora agora.
     sessoes.limpar_orfaos()
     sessoes.expirar()
+
+    # Banco de identidade. Só é exigido quando há login a exigir — os testes
+    # rodam sem Postgres alcançável (`network_mode: none`), e o modo local não
+    # precisa dele.
+    #
+    # Quando o login É exigido, banco fora do ar derruba a subida, de
+    # propósito. A alternativa seria descobrir na primeira requisição, e aí só
+    # há dois desfechos: toda requisição devolve 500, inútil, ou alguém
+    # "conserta" deixando seguir sem autenticação, catastrófico.
+    if EXIGIR_LOGIN:
+        db.iniciar()
+        logger.info("login EXIGIDO; banco de identidade ligado")
+    else:
+        try:
+            db.iniciar()
+            logger.info("banco de identidade ligado (login nao exigido)")
+        except db.BancoIndisponivel as exc:
+            logger.info("sem banco de identidade: %s", exc)
+        logger.warning(
+            "login NAO exigido. Correto apenas com a porta em 127.0.0.1, onde "
+            "o perimetro e o endereco. Em porta publica, ligue "
+            "ANON_EXIGIR_LOGIN=1."
+        )
     yield
 
 
@@ -105,7 +157,190 @@ app = FastAPI(
 )
 
 
-def pegar_sessao(doc_id: str) -> Sessao:
+# --------------------------------------------------------------------------
+# Identidade — Bloco 2 da Fase 4
+# --------------------------------------------------------------------------
+def usuario_atual(request: Request):
+    """Resolve o cookie em usuário. **Falha fechada.**
+
+    Em modo local devolve ``None`` e ninguém pergunta nada — o perímetro é o
+    endereço. Com `ANON_EXIGIR_LOGIN=1`, sessão ausente, desconhecida,
+    expirada ou de usuário desativado é **401**, nunca "segue como anônimo".
+    É a dependência que o `goal-fase-4.md` §Bloco 2 pede.
+
+    O objeto do usuário sobrevive ao fim da transação porque o `sessionmaker`
+    usa `expire_on_commit=False`; sem isso, ler `papel` depois do `commit`
+    dispararia uma consulta numa sessão já fechada.
+    """
+    if not EXIGIR_LOGIN:
+        return None
+    with db.sessao() as s:
+        u = auth.usuario_da_sessao(s, request.cookies.get(COOKIE_SESSAO))
+        if u is None:
+            raise HTTPException(401, "sessão ausente ou expirada; entre de novo")
+        return u
+
+
+def conferir_csrf(request: Request) -> None:
+    """Dupla submissão de token, exigida só quando há cookie de sessão.
+
+    CSRF é um ataque que **monta em cookie**: o navegador da vítima envia o
+    cookie sozinho, e o site do atacante colhe o efeito. Sem cookie de sessão
+    não há o que montar, e é por isso que a conferência não se aplica ao modo
+    local — aplicá-la ali quebraria todo cliente de linha de comando sem
+    ganhar segurança nenhuma.
+
+    `SameSite=Lax` no cookie já barra a maior parte. Este é o cinto além do
+    suspensório, e é o que cobre o caso que o `Lax` não cobre: navegador
+    antigo, e requisição de topo com método seguro que o servidor trate como
+    insegura.
+
+    A comparação é `compare_digest` — tempo constante. Comparar com `==`
+    vazaria o token caractere a caractere pelo tempo de resposta.
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    cookie = request.cookies.get(COOKIE_CSRF)
+    if not cookie:
+        return
+    enviado = request.headers.get(CABECALHO_CSRF, "")
+    if not secrets.compare_digest(cookie, enviado):
+        raise HTTPException(403, "token anti-CSRF ausente ou incorreto")
+
+
+def _plantar_cookies(resposta: Response, token: str) -> str:
+    """Cookie de sessão (ilegível ao JS) e cookie anti-CSRF (legível).
+
+    O par é deliberado. O de sessão é `HttpOnly` para que um XSS não consiga
+    roubá-lo; o anti-CSRF **precisa** ser legível, porque é o JS da própria
+    página que o copia para o cabeçalho — e isso é seguro porque o site do
+    atacante não consegue ler cookie de outro domínio.
+    """
+    csrf = secrets.token_urlsafe(32)
+    comum = dict(secure=COOKIE_SEGURO, samesite="lax", path="/")
+    resposta.set_cookie(COOKIE_SESSAO, token, httponly=True, **comum)
+    resposta.set_cookie(COOKIE_CSRF, csrf, httponly=False, **comum)
+    return csrf
+
+
+def _apagar_cookies(resposta: Response) -> None:
+    for nome in (COOKIE_SESSAO, COOKIE_CSRF):
+        resposta.delete_cookie(nome, path="/")
+
+
+class Credencial(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    # Teto na senha: o Argon2 aceita entrada de qualquer tamanho, e sem limite
+    # um corpo de megabytes viraria trabalho de CPU gratuito para o atacante.
+    senha: str = Field(min_length=1, max_length=1024)
+
+
+class TrocaDeSenha(BaseModel):
+    atual: str = Field(min_length=1, max_length=1024)
+    nova: str = Field(min_length=12, max_length=1024)
+
+
+@app.post("/api/login")
+def login(corpo: Credencial, request: Request, resposta: Response) -> dict:
+    if not EXIGIR_LOGIN:
+        raise HTTPException(409, "este servidor roda em modo local, sem login")
+    ip = request.client.host if request.client else None
+    try:
+        with db.sessao() as s:
+            aberta = auth.autenticar(s, corpo.email, corpo.senha, ip)
+    except auth.ExcessoDeTentativas as exc:
+        # 429 e não 401: a diferença é acionável para quem está do outro lado.
+        # Não registra tentativa: ela já estava barrada, e contar de novo
+        # transformaria a trava em bloqueio permanente a cada nova batida.
+        raise HTTPException(429, str(exc)) from exc
+    except auth.FalhaDeLogin as exc:
+        # Transação PRÓPRIA para a tentativa falha. A de cima acabou em
+        # exceção e foi desfeita — gravar lá dentro era o defeito que deixava
+        # o limite de tentativa contando zero. Ver `auth.autenticar`.
+        with db.sessao() as s:
+            auth.registrar_falha(s, corpo.email, ip)
+        raise HTTPException(401, str(exc)) from exc
+
+    csrf = _plantar_cookies(resposta, aberta.token)
+    return {
+        "papel": aberta.papel,
+        "inquilino_id": aberta.inquilino_id,
+        "troca_senha_obrigatoria": aberta.troca_senha_obrigatoria,
+        "csrf": csrf,
+    }
+
+
+@app.get("/api/eu")
+def eu(request: Request) -> dict:
+    """Quem está logado, para a tela decidir o que mostrar na abertura.
+
+    Rota separada e não um campo de `/api/saude` porque as duas respondem
+    perguntas diferentes: saúde é do serviço e precisa ficar aberta para
+    monitoramento; esta é da sessão.
+
+    Em modo local devolve `exige_login: false` e a tela nem oferece entrada.
+    Com login exigido e sem sessão, **401** — e é o 401 que faz a tela de
+    login aparecer.
+    """
+    if not EXIGIR_LOGIN:
+        return {"exige_login": False}
+    with db.sessao() as s:
+        u = auth.usuario_da_sessao(s, request.cookies.get(COOKIE_SESSAO))
+        if u is None:
+            raise HTTPException(401, "sessão ausente ou expirada")
+        return {
+            "exige_login": True,
+            "email": u.email,
+            "papel": u.papel,
+            "troca_senha_obrigatoria": u.troca_senha_obrigatoria,
+        }
+
+
+@app.post("/api/logout", dependencies=[Depends(conferir_csrf)])
+def logout(request: Request, resposta: Response) -> dict:
+    """Apaga a linha da sessão, não só o cookie. Ver `auth.fechar_sessao`."""
+    encerrada = False
+    if EXIGIR_LOGIN:
+        with db.sessao() as s:
+            encerrada = auth.fechar_sessao(s, request.cookies.get(COOKIE_SESSAO))
+    _apagar_cookies(resposta)
+    return {"encerrada": encerrada}
+
+
+@app.post("/api/senha", dependencies=[Depends(conferir_csrf)])
+def trocar_senha(
+    corpo: TrocaDeSenha, resposta: Response, usuario=Depends(usuario_atual)
+) -> dict:
+    """Troca a senha e derruba **todas** as sessões, inclusive esta.
+
+    Derrubar a própria sessão é intencional: quem troca a senha porque suspeita
+    de acesso indevido precisa que o outro lado caia. O preço é um login novo,
+    e é pequeno.
+    """
+    if usuario is None:
+        raise HTTPException(409, "este servidor roda em modo local, sem login")
+    try:
+        with db.sessao() as s:
+            auth.trocar_senha(s, s.get(type(usuario), usuario.id), corpo.atual, corpo.nova)
+    except auth.FalhaDeLogin as exc:
+        raise HTTPException(401, str(exc)) from exc
+    _apagar_cookies(resposta)
+    return {"trocada": True, "entrar_de_novo": True}
+
+
+def pegar_sessao(doc_id: str, usuario=Depends(usuario_atual)) -> Sessao:
+    """O gargalo de toda rota de documento — e agora também o de login.
+
+    A exigência de sessão entra **aqui**, num lugar só, e não rota a rota:
+    `tests/test_posse_rotas.py` percorre `app.routes` e falha se alguma rota
+    de documento não passar por esta função, então proteger o gargalo protege
+    todas, inclusive a que alguém acrescentar depois.
+
+    `usuario` não é usado no corpo de propósito. Ele está na assinatura para
+    que a dependência rode — e `usuario_atual` levanta 401 antes de chegarmos
+    a procurar a sessão. A posse por documento, que usa este objeto, é o
+    Bloco 3 (`sessao_dono`).
+    """
     sessoes.expirar()
     s = sessoes.obter(doc_id)
     if s is None:
@@ -117,7 +352,11 @@ def pegar_sessao(doc_id: str) -> Sessao:
 # Documento
 # --------------------------------------------------------------------------
 @app.post("/api/doc")
-def criar_doc(arquivo: UploadFile = File(...)) -> dict:
+def criar_doc(
+    arquivo: UploadFile = File(...),
+    usuario=Depends(usuario_atual),
+    _csrf=Depends(conferir_csrf),
+) -> dict:
     # `def`, não `async def`: a detecção é CPU pura e leva ~0,7 s por página
     # (102 páginas mediram 69 s). Dentro de `async def` ela roda no laço de
     # eventos, e durante esse tempo o servidor inteiro para de responder —

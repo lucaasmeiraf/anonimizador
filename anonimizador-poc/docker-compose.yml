@@ -137,6 +137,10 @@ services:
     environment:
       ANON_NER: "${ANON_NER:-bert-lenerbr}"
       ANON_ANALISE_URL: "http://analise:8100"
+      # Modo de acesso. Vazio = modo local, o padrao: a porta sai em
+      # 127.0.0.1 e o perimetro e o endereco. Ver .env.example.
+      ANON_EXIGIR_LOGIN: "${ANON_EXIGIR_LOGIN:-}"
+      ANON_COOKIE_INSEGURO: "${ANON_COOKIE_INSEGURO:-}"
       ANON_DB_URL: "postgresql+pg8000://${POSTGRES_USER:-anonimizador}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-anonimizador}"
     expose: ["8000"]
 
@@ -183,6 +187,12 @@ services:
     depends_on: [ui]
     entrypoint: ["python", "-m", "anonimizador.web.forward"]
     command: ["--escuta", "0.0.0.0:8000", "--destino", "ui:8000"]
+    environment:
+      # Teto de conexoes e espera pelo primeiro byte. Ver D-04 em
+      # DEFEITOS.md: isto faz o servico degradar previsivelmente sob pressao,
+      # nao ficar imune — limite por IP e trabalho de proxy reverso.
+      ANON_PROXY_MAX_CONEXOES: "${ANON_PROXY_MAX_CONEXOES:-64}"
+      ANON_PROXY_ESPERA_INICIAL: "${ANON_PROXY_ESPERA_INICIAL:-15}"
     ports:
       - "127.0.0.1:8000:8000"
 

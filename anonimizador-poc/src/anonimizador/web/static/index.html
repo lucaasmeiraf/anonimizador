@@ -25,28 +25,143 @@
     <span class="nome-produto">Anonimizador</span>
   </div>
 
-  <div id="cabecalho-doc" class="arquivo hidden">
+  <!-- Duas acoes de arquivo, visiveis. Eram um menu suspenso atras do nome do
+       documento; o nome foi para o centro da barra do visualizador, e as acoes
+       ficaram aqui com icone e rotulo. Menos um clique para cada uma, e a
+       destrutiva deixa de estar escondida no mesmo lugar da inofensiva. -->
+  <div id="cabecalho-doc" class="acoes-arquivo hidden">
     <span class="separador" aria-hidden="true">·</span>
-    <button id="btn-arquivo" class="botao-arquivo" aria-haspopup="menu"
-            aria-expanded="false" aria-controls="menu-arquivo">
-      <span id="nome-arquivo"></span>
-      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    <button id="menu-trocar" class="acao-arquivo" title="Trocar por outro PDF">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20 11A8 8 0 0 0 6.3 6.3L4 8.5"/><path d="M4 4v4.5h4.5"/>
+        <path d="M4 13a8 8 0 0 0 13.7 4.7L20 15.5"/><path d="M20 20v-4.5h-4.5"/>
+      </svg>
+      <span class="so-largo">Trocar arquivo</span>
     </button>
-    <div id="menu-arquivo" class="menu hidden" role="menu">
-      <button id="menu-trocar" role="menuitem">Trocar arquivo…</button>
-      <button id="btn-descartar" role="menuitem" class="item-perigo">Descartar documento…</button>
-    </div>
+    <button id="btn-descartar" class="acao-arquivo acao-perigo"
+            title="Descartar este documento">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 7h15"/><path d="M9.5 7V4.5h5V7"/><path d="M6.5 7l1 12.5h9l1-12.5"/>
+      </svg>
+      <span class="so-largo">Descartar</span>
+    </button>
   </div>
 
   <!-- Mesmo componente nas duas telas: na inicial, "Enviar" é a etapa atual. -->
   <ol id="etapas" class="etapas" aria-label="Etapas"></ol>
 
   <div id="topo-acoes" class="topo-acoes">
+    <button id="btn-sair" class="icone-botao hidden" aria-label="Sair da conta"
+            title="Sair">Sair</button>
     <button id="btn-atalhos" class="icone-botao" aria-label="Ajuda e atalhos de teclado"
             aria-haspopup="dialog" aria-controls="popover-atalhos">?</button>
     <button id="btn-principal" class="primario hidden">Aprovar e gerar PDF</button>
   </div>
 </header>
+
+<!-- ------------------------------------------------------------------ -->
+<!-- Tela de entrada. Só existe com `ANON_EXIGIR_LOGIN=1`; em modo local o
+     perímetro é o endereço (127.0.0.1) e esta seção nunca aparece.
+
+     Tela própria e não modal: "não autenticado" é estado do aplicativo
+     inteiro, e um modal sobre a revisão sugeriria que há um documento atrás.
+     Não há "lembrar de mim" — a sessão expira por inatividade em 30 min, e o
+     caso que isso cobre é a estação destravada com documento em claro. -->
+<section id="tela-login" class="tela-envio hidden">
+  <div class="envio envio-estreito">
+
+    <!-- Mesmo esqueleto da tela inicial: cabeça com h1, subtítulo e a pílula
+         de confiança, depois um cartão. A entrada é a primeira coisa que o
+         cliente vê numa apresentação, e parecer outro produto aqui custa mais
+         do que qualquer enfeite compraria.
+
+         Sem imagem decorativa de propósito — ver a nota em estilo.css. -->
+    <div class="envio-cabeca">
+      <h1>Entrar</h1>
+      <p class="subtitulo">
+        Este servidor pede identificação. Seus documentos ficam visíveis só
+        para você.
+      </p>
+      <p class="selo-confianca">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>
+        </svg>
+        Processado nesta máquina — nada sai daqui sem você mandar.
+      </p>
+    </div>
+
+    <form id="form-entrar" class="cartao-envio cartao-entrada" autocomplete="on">
+      <label class="campo">
+        <span>E-mail</span>
+        <span class="campo-busca">
+          <input id="login-email" type="email" name="email" required
+                 autocomplete="username" autocapitalize="none"
+                 spellcheck="false" placeholder="voce@exemplo.org">
+        </span>
+      </label>
+
+      <label class="campo">
+        <span>Senha</span>
+        <span class="campo-busca">
+          <input id="login-senha" type="password" name="senha" required
+                 autocomplete="current-password">
+        </span>
+      </label>
+
+      <p id="login-erro" class="aviso-entrada hidden" role="alert"></p>
+
+      <button id="btn-entrar" type="submit" class="primario largo">Entrar</button>
+
+      <p class="nota-entrada">
+        Sem conta? Quem administra este servidor cria a sua — não há cadastro
+        automático, e isso é deliberado.
+      </p>
+    </form>
+
+    <!-- Primeiro acesso cai aqui direto, sem passar pela tela principal: sem
+         essa trava a senha temporária vira permanente, que é o modo de falha
+         padrão de todo provisionamento sem e-mail. -->
+    <form id="form-trocar" class="cartao-envio cartao-entrada hidden" autocomplete="on">
+      <div class="cabeca-cartao">
+        <strong>Escolha sua senha</strong>
+        <span class="auxiliar">
+          A senha que você recebeu vale só para este primeiro acesso.
+        </span>
+      </div>
+
+      <label class="campo">
+        <span>Senha que você recebeu</span>
+        <span class="campo-busca">
+          <input id="troca-atual" type="password" required
+                 autocomplete="current-password">
+        </span>
+      </label>
+
+      <label class="campo">
+        <span>Senha nova</span>
+        <span class="campo-busca">
+          <input id="troca-nova" type="password" required minlength="12"
+                 autocomplete="new-password">
+        </span>
+        <small>Pelo menos 12 caracteres.</small>
+      </label>
+
+      <label class="campo">
+        <span>Repita a senha nova</span>
+        <span class="campo-busca">
+          <input id="troca-repete" type="password" required minlength="12"
+                 autocomplete="new-password">
+        </span>
+      </label>
+
+      <p id="troca-erro" class="aviso-entrada hidden" role="alert"></p>
+
+      <button id="btn-trocar" type="submit" class="primario largo">
+        Trocar senha e continuar
+      </button>
+    </form>
+  </div>
+</section>
 
 <!-- ------------------------------------------------------------------ -->
 <!-- Tela inicial. Fala com quem vai anonimizar um processo: nome de modelo,
@@ -296,6 +411,14 @@
 
       <div class="espaco"></div>
 
+      <!-- Nome do documento, ao centro. Truncado com reticencias no inicio
+           (`direction: rtl` no CSS), para a extensao continuar visivel: num
+           nome longo, "...processo-2026.pdf" diz mais que
+           "Processo administrativo nu...". -->
+      <span id="nome-arquivo" class="nome-documento so-largo" title=""></span>
+
+      <div class="espaco"></div>
+
       <div class="zoom" role="group" aria-label="Zoom">
         <button id="btn-zoom-menos" class="icone-botao" aria-label="Diminuir zoom">
           <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
@@ -342,19 +465,16 @@
 
     <!-- ============================ Detecções ============================ -->
     <div id="painel-deteccoes" class="painel" role="tabpanel" aria-labelledby="aba-deteccoes">
-      <div class="resumo">
-        <p id="resumo-deteccoes" class="resumo-titulo"></p>
-        <div class="progresso-revisao">
-          <div class="barra" role="progressbar" id="barra-revisao"
-               aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"
-               aria-label="Ocorrências revisadas"><span id="barra-revisao-cheia"></span></div>
-          <span id="texto-revisao" class="auxiliar"></span>
-        </div>
-        <div class="navegacao">
-          <button id="btn-anterior" class="secundario pequeno" title="Anterior (K ou ↑)">‹ anterior</button>
-          <button id="btn-proximo" class="secundario pequeno" title="Próximo (J ou ↓)">próximo ›</button>
-        </div>
-      </div>
+      <!-- A aba abre direto na busca, de propósito. Saíram daqui, em
+           2026-11-03, a contagem, a barra de "N de M revisados" e os botões
+           anterior/próximo: a barra media quantos itens foram *visitados*, o
+           que não é o mesmo que revisados, e dava sensação de progresso que o
+           sistema não tinha como aferir. A navegação por teclado (J/K)
+           continua, documentada no painel de atalhos.
+
+           O que importa — o que vai ser anonimizado e se sobrou vazamento —
+           é dito pelo selo de verificação e pela lista abaixo, que são
+           medidos de verdade. -->
 
       <div class="busca">
         <label for="termo" class="rotulo-visivel-leitor">Buscar ou adicionar termo</label>
@@ -458,17 +578,12 @@
             <span class="saida-ajuda">O mesmo documento, com os dados removidos do arquivo.</span>
           </div>
 
-          <div class="cartao-saida">
-            <label class="saida-linha">
-              <input type="checkbox" id="saida-texto">
-              <span class="saida-titulo">Texto com códigos para IA</span>
-            </label>
-            <span class="saida-ajuda">
-              Uma versão em texto, com um código no lugar de cada dado marcado —
-              em todos, inclusive onde o PDF ficou em tarja. Gerada aqui, sem rede.
-            </span>
-            <button id="btn-previa-texto" class="secundario pequeno">Pré-visualizar texto</button>
-          </div>
+          <!-- O texto com codigos saiu das saidas em 2026-11-03: quem envia
+               para a IA nao precisa do arquivo na mao, e o envio gera o texto
+               por conta propria. O artefato CONTINUA existindo no servidor,
+               com gate proprio (`verify_texto`), porque e dele que o envio
+               vive — e a previa abaixo continua, porque o aviso de
+               consentimento manda ler o texto antes de enviar. -->
 
           <div class="cartao-saida" id="cartao-ia">
             <label class="saida-linha">
@@ -496,7 +611,6 @@
             <summary>Ler o texto que será enviado</summary>
             <pre id="texto-previa"></pre>
           </details>
-          <a id="link-texto" class="link-download" href="#">Baixar o texto (.txt)</a>
         </div>
 
         <!-- Envio a LLM externa (goal-fase-3 §2.9, docs/05 §2.6). So aparece

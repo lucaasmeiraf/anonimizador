@@ -325,7 +325,81 @@ def build_parser() -> argparse.ArgumentParser:
     add_ner(p)
     p.set_defaults(func=cmd_offline_proof)
 
+    p = sub.add_parser(
+        "criar-usuario",
+        help="cria inquilino e usuário para o modo com login",
+    )
+    p.add_argument("--email", required=True)
+    p.add_argument("--inquilino", required=True, help="nome do órgão ou escritório")
+    p.add_argument(
+        "--papel", default="dono", choices=["operador", "dono", "plataforma"]
+    )
+    p.set_defaults(func=cmd_criar_usuario)
+
     return ap
+
+
+def cmd_criar_usuario(args) -> int:
+    """Cria o primeiro usuário. Sem isto, ligar o login tranca todo mundo fora.
+
+    A senha é **sorteada e mostrada uma vez**, e não pedida por argumento, por
+    dois motivos. Senha em linha de comando fica no histórico do shell e na
+    lista de processos, onde qualquer outro usuário da máquina a lê. E senha
+    escolhida por quem provisiona costuma ser fraca e reaproveitada — a
+    sorteada aqui tem 256 bits de `secrets`.
+
+    O usuário nasce com `troca_senha_obrigatoria`, então esta senha serve para
+    exatamente um login. É a decisão do `goal-fase-4.md` §3: sem e-mail não há
+    autoatendimento, a credencial é entregue por fora e o primeiro acesso
+    obriga a troca.
+    """
+    import secrets
+
+    from . import db
+    from .db.modelos import Identidade, Inquilino, Usuario
+    from .web import auth
+
+    db.iniciar()
+    senha = secrets.token_urlsafe(18)
+    with db.sessao() as s:
+        inquilino = (
+            s.query(Inquilino).filter(Inquilino.nome == args.inquilino).one_or_none()
+        )
+        if inquilino is None:
+            inquilino = Inquilino(nome=args.inquilino)
+            s.add(inquilino)
+            s.flush()
+
+        if s.query(Usuario).filter(Usuario.email == args.email).one_or_none():
+            print(f"ja existe usuario com e-mail {args.email}")
+            return 1
+
+        # `plataforma` nao pertence a inquilino, e e por isso que nao abre
+        # documento. Ver `goal-fase-4.md` secao 3.
+        usuario = Usuario(
+            inquilino_id=None if args.papel == "plataforma" else inquilino.id,
+            email=args.email,
+            papel=args.papel,
+            troca_senha_obrigatoria=True,
+        )
+        s.add(usuario)
+        s.flush()
+        s.add(
+            Identidade(
+                usuario_id=usuario.id,
+                provedor=auth.PROVEDOR_SENHA,
+                subject=args.email.strip().lower(),
+                segredo_hash=auth.hash_de_senha(senha),
+            )
+        )
+
+    print(f"inquilino : {args.inquilino}")
+    print(f"usuario   : {args.email}  ({args.papel})")
+    print(f"senha     : {senha}")
+    print()
+    print("Esta senha NAO e recuperavel e nao aparece de novo. Ela vale para um")
+    print("login: o primeiro acesso obriga a troca.")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

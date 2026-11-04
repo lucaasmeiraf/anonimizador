@@ -440,3 +440,187 @@ def test_resposta_do_modelo_nunca_vai_para_innerhtml():
     corpo = re.sub(r"//.*", "", corpo)
     assert "innerHTML" not in corpo
     assert "textContent = a.resposta" in corpo
+
+
+# --------------------------------------------------------------------------
+# Tela de entrada — Bloco 2 da Fase 4
+# --------------------------------------------------------------------------
+def test_a_tela_de_entrada_existe_com_os_dois_formularios():
+    """Entrar e trocar senha. O segundo não é opcional.
+
+    Sem a tela de troca, o primeiro acesso não tem para onde ir e a senha
+    temporária vira permanente — o modo de falha padrão de todo
+    provisionamento sem e-mail (`goal-fase-4.md` §3).
+    """
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    assert 'id="tela-login"' in html
+    assert 'id="form-entrar"' in html and 'id="form-trocar"' in html
+    assert 'id="btn-sair"' in html
+
+
+def test_os_campos_de_senha_sao_de_senha():
+    """`type="password"` em todos. Um `text` esquecido mostra a senha na tela.
+
+    E `autocomplete` correto: `new-password` na troca faz o gerenciador do
+    navegador oferecer uma senha forte em vez de repetir a antiga.
+    """
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    bloco = html[html.index('id="tela-login"') : html.index('id="tela-upload"')]
+
+    for campo in ("login-senha", "troca-atual", "troca-nova", "troca-repete"):
+        m = re.search(rf'<input id="{campo}"[^>]*>', bloco)
+        assert m, f"campo {campo} sumiu"
+        assert 'type="password"' in m.group(0), f"{campo} não é campo de senha"
+
+    assert bloco.count('autocomplete="new-password"') == 2
+
+
+def test_o_cabecalho_anti_csrf_e_automatico():
+    """O `fetch` é envolvido uma vez, e isso precisa continuar verdade.
+
+    Se alguém trocar o envelope por "acrescenta o cabeçalho em cada chamada",
+    a próxima chamada nova nasce sem ele — e falha com 403 em produção, não
+    no teste. Este teste trava o envelope, não a lista de chamadas.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert "window.fetch =" in js, "o envelope do fetch sumiu"
+    assert "X-CSRF-Token" in js
+    # O envelope tem de existir antes de qualquer uso, senão as chamadas que
+    # rodam na abertura escapam dele.
+    assert js.index("window.fetch =") < js.index('fetch("/api/eu")')
+
+
+def test_a_abertura_pergunta_quem_e_antes_de_montar():
+    """`/api/eu` decide qual tela aparece. Sem isso, a tela principal pisca."""
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert '/api/eu' in js
+    assert "mostrarTela(\"tela-login\")" in js
+
+
+def test_todo_transporte_leva_o_cabecalho_anti_csrf():
+    """Envolver o `fetch` não cobre o `XMLHttpRequest`, e isso custou caro.
+
+    O envio do documento usa XHR — único jeito de ter progresso real de
+    upload —, então ficou fora do envelope do `fetch` e morria com 403 em modo
+    com login. Em modo local o servidor não exige o cabeçalho, porque não há
+    cookie, e o defeito era **invisível** até alguém ligar o login.
+
+    Este teste não confere o envelope: confere que **cada** transporte passa
+    pelo cabeçalho. Um XHR novo sem `aplicarCsrf` falha aqui, e não em
+    produção.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    linhas = js.splitlines()
+
+    aberturas = [i for i, l in enumerate(linhas) if "new XMLHttpRequest" in l]
+    assert aberturas, "nenhum XHR: se o upload mudou de transporte, revise este teste"
+
+    for i in aberturas:
+        # `aplicarCsrf` tem de aparecer perto da criação — na prática logo
+        # depois do `open`, que é o único momento em que dá para pôr cabeçalho.
+        vizinhanca = "\n".join(linhas[i : i + 15])
+        assert "aplicarCsrf" in vizinhanca, (
+            f"XHR na linha {i + 1} sem aplicarCsrf: o cabeçalho anti-CSRF não "
+            "vai ser enviado, e em modo local isso passa despercebido"
+        )
+
+    assert "setRequestHeader" in js, "aplicarCsrf precisa pôr o cabeçalho no XHR"
+
+
+# --------------------------------------------------------------------------
+# Inventário e barra do visualizador — ajustes de 2026-11-03
+# --------------------------------------------------------------------------
+def test_o_servidor_continua_mandando_as_classes_zeradas():
+    """A tela esconde; o servidor não.
+
+    `Sessao.inventario` inclui as entidades com zero de propósito — "procurei
+    CNH e não achei" e "não sei procurar CNH" somem da tela do mesmo jeito, e
+    a leitura natural da ausência é a segunda. A decisão de 2026-11-03 foi
+    **esconder na tela**, mantendo a prova numa linha recolhível.
+
+    Se alguém "simplificar" cortando os zeros no servidor, a linha recolhida
+    fica vazia e a prova desaparece de verdade. Este teste trava o servidor,
+    que é onde o dado nasce.
+    """
+    import re
+    from pathlib import Path as _P
+
+    fonte = (
+        _P(app_mod.__file__).parent / "sessao.py"
+    ).read_text(encoding="utf-8")
+    bloco = re.search(r"def inventario.*?\n(?=    def )", fonte, re.S)
+    assert bloco, "inventario() sumiu"
+    assert "ENTIDADES_ATIVAS" in bloco.group(0), (
+        "o inventário deixou de partir da lista completa de entidades"
+    )
+
+
+def test_a_tela_recolhe_as_classes_sem_ocorrencia():
+    """Escondido, não removido: a linha recolhível tem de existir."""
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert "sem-ocorrencia" in js
+    assert "classes conferidas, sem ocorrência" in js
+    css = (ESTATICOS / "estilo.css").read_text(encoding="utf-8")
+    assert ".sem-ocorrencia" in css
+
+
+def test_o_nome_do_documento_esta_na_barra_do_visualizador():
+    """E as ações de arquivo não são mais um menu suspenso."""
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    barra = html[html.index('class="barra-visualizador"') : html.index('id="rolagem"')]
+    assert 'id="nome-arquivo"' in barra, "o nome saiu da barra do visualizador"
+    assert 'role="menu"' not in html, "o menu suspenso do arquivo voltou"
+    assert 'id="menu-trocar"' in html and 'id="btn-descartar"' in html
+
+
+def test_descartar_continua_atras_de_confirmacao():
+    """O menu saiu; a confirmação não pode sair.
+
+    A proteção real nunca foi o menu — é o modal, que explica que a ação apaga
+    o original, a proposta e o PDF gerado, sem volta. Sem ele, "Descartar"
+    passa a ser um clique único e irreversível.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert 'id="btn-descartar"' in (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    assert '$("btn-descartar").addEventListener("click", () => abrirModal())' in js, (
+        "Descartar deixou de passar pelo modal de confirmação"
+    )
+
+
+def test_a_saida_de_texto_saiu_da_tela_mas_nao_do_servidor():
+    """O .txt não é mais oferecido; o artefato continua existindo.
+
+    Decisão de 2026-11-03: quem envia à IA não precisa do arquivo na mão, e o
+    envio gera o texto sozinho. O que **não** pode acontecer é o artefato
+    deixar de existir — é dele que o envio vive, e ele tem gate próprio
+    (`verify_texto`, invariante 2 do `CLAUDE.md`).
+
+    Este teste trava as duas pontas: a tela não oferece, o servidor serve.
+    """
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    assert 'id="saida-texto"' not in html
+    assert 'id="link-texto"' not in html
+    # A prévia fica: o aviso de consentimento manda ler o texto antes de enviar.
+    assert 'id="previa-texto"' in html
+
+    rotas = {
+        r.path for r in app_mod.app.routes if getattr(r, "path", "").endswith("/texto")
+    }
+    assert "/api/doc/{doc_id}/download/texto" in rotas, (
+        "a rota do texto sumiu: o envio à IA depende dela"
+    )
+
+
+def test_os_avisos_incondicionais_sairam_e_os_condicionais_ficaram():
+    """A seção some quando não há nada a avisar, e só então.
+
+    Saíram "metadados são zerados" e "layout fica intacto": incondicionais, e
+    nenhum pedia ação. Ficaram os que valem só para aquele arquivo —
+    assinatura digital invalidada (peso jurídico) e páginas que a detecção não
+    leu (risco de vazamento). Remover a seção inteira levaria esses dois.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert "Metadados são zerados" not in js
+    assert "não há refluxo" not in js
+    assert "assinatura digital será invalidada" in js
+    assert 'classList.toggle("hidden", ul.children.length === 0)' in js

@@ -258,6 +258,49 @@ class Trilha(Base):
     )
 
 
+class SessaoLogin(Base):
+    """Uma sessão de login aberta. É o que o cookie do navegador referencia.
+
+    **Por que no banco, e não num cookie assinado.** Cookie assinado
+    (`itsdangerous`, JWT) carrega o próprio estado e por isso **não dá para
+    invalidar**: quem tem o cookie segue entrando até ele expirar, mesmo
+    depois do logout. O critério de aceite do `goal-fase-4.md` §8 exige que
+    logout invalide de fato, e trocar a senha precisa derrubar as outras
+    sessões. As duas coisas pedem estado do lado do servidor.
+
+    **A chave é o HASH do token, não o token.** Vazamento do banco não vira
+    acesso: quem lê a tabela não consegue montar o cookie. É a mesma lógica da
+    senha em `Identidade.segredo_hash`.
+
+    SHA-256 aqui, e Argon2 lá, **de propósito**. Hash lento existe para
+    segredo de baixa entropia, que é adivinhável por força bruta — senha de
+    gente. O token é 256 bits de `secrets`, e não há o que adivinhar; gastar
+    Argon2 nele só tornaria cada requisição mais lenta, sem comprar nada.
+    """
+
+    __tablename__ = "sessao_login"
+    __table_args__ = (
+        Index("ix_sessao_login_usuario", "usuario_id"),
+        Index("ix_sessao_login_expira", "expira_em"),
+    )
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    usuario_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("usuario.id"), nullable=False
+    )
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=agora
+    )
+    expira_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # Para expiração por inatividade, e para a trilha poder dizer quando a
+    # sessão foi usada pela última vez. Nunca carrega conteúdo de documento.
+    ultimo_uso: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=agora
+    )
+
+
 class LoginFalho(Base):
     """Tentativas malsucedidas, para o limite de tentativa.
 

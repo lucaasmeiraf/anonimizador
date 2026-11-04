@@ -230,42 +230,32 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .marca { display: flex; align-items: center; gap: 8px; flex: none; }
 .logo { width: 22px; height: 22px; color: var(--acao); }
 .nome-produto { font-weight: 650; font-size: 15px; }
-.arquivo { position: relative; display: flex; align-items: center; gap: 6px; min-width: 0; }
 .separador { color: var(--texto-3); }
-.botao-arquivo {
+
+/* Acoes de arquivo no topo. Eram um menu suspenso atras do nome do documento;
+ * o nome foi para o centro da barra do visualizador e estas duas ficaram
+ * visiveis, com icone e rotulo. O rotulo desaparece em tela estreita
+ * (`.so-largo`) e o `title` continua dizendo o que o botao faz. */
+.acoes-arquivo { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.acao-arquivo {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border-color: transparent;
   background: transparent;
   padding: 6px 8px;
-  max-width: 280px;
   color: var(--texto-2);
+  font-size: 13px;
 }
-.botao-arquivo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 12px;
-  min-width: 220px;
-  padding: 4px;
-  background: var(--superficie);
-  border: 1px solid var(--borda);
-  border-radius: var(--raio);
-  box-shadow: var(--sombra-flutuante);
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
+.acao-arquivo:hover:not(:disabled) { background: var(--superficie-2); border-color: var(--borda); }
+/* Peso diferente do resto, e e por isso que o menu podia sair: a acao
+ * destrutiva continua distinguivel a olho, e a confirmacao continua no
+ * caminho. Ver o comentario em app.js, secao dos modais. */
+.acao-perigo { color: var(--perigo); }
+.acao-perigo:hover:not(:disabled) {
+  background: var(--perigo-suave);
+  border-color: color-mix(in srgb, var(--perigo) 30%, transparent);
 }
-.menu button {
-  text-align: left;
-  border: 0;
-  background: transparent;
-  border-radius: var(--raio-p);
-  padding: 8px 10px;
-}
-.menu .item-perigo { color: var(--perigo); }
 
 /* Etapas */
 .etapas {
@@ -638,6 +628,29 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   min-height: 48px;
 }
 .espaco { flex: 1; }
+
+/* Nome do documento, ao centro da barra do visualizador.
+ *
+ * Dois `.espaco` de cada lado o deixam centralizado ENTRE os grupos, e nao no
+ * centro geometrico da barra — os grupos tem larguras diferentes. Ficou
+ * assim de proposito: centralizar no absoluto exigiria tira-lo do fluxo, e um
+ * nome longo passaria por cima do zoom em tela media.
+ *
+ * `direction: rtl` com `text-overflow: ellipsis` trunca o INICIO em vez do
+ * fim. Num nome longo, "...processo-2026.pdf" diz mais do que
+ * "Processo administrativo nu...", porque a extensao e a parte final sao o
+ * que identifica o arquivo. O `title` carrega o nome inteiro. */
+.nome-documento {
+  max-width: min(42ch, 34vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--texto-2);
+}
 .segmentado {
   display: inline-flex;
   padding: 2px;
@@ -878,13 +891,6 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .aviso-linha.alerta { color: var(--alerta); }
 
 /* Resumo e progresso */
-.resumo { display: flex; flex-direction: column; gap: 8px; padding-bottom: 16px; border-bottom: 1px solid var(--borda); }
-.resumo-titulo { font-weight: 600; font-size: 15px; }
-.progresso-revisao { display: flex; align-items: center; gap: 8px; }
-.barra { flex: 1; height: 6px; border-radius: 3px; background: var(--superficie-2); border: 1px solid var(--borda); overflow: hidden; }
-.barra span { display: block; height: 100%; width: 0; background: var(--acao); transition: width .2s; }
-.navegacao { display: flex; gap: 8px; }
-.navegacao button { flex: 1; }
 
 /* Busca */
 .campo-busca {
@@ -1316,3 +1322,78 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ----------------------------------------------------- tela de entrada ---
+ *
+ * Reusa `.tela-envio`, `.envio-cabeca`, `.selo-confianca` e `.cartao-envio`
+ * da tela inicial. Nada aqui inventa estilo novo de propósito: a entrada e o
+ * envio sao a mesma jornada, e a entrada e a primeira coisa que alguem ve
+ * numa apresentacao.
+ *
+ * SEM IMAGEM DECORATIVA, e a decisao e consciente. Foto de banco de imagens
+ * em tela de login envelheceu junto com o painel lateral azul de 2015, e num
+ * produto cuja venda e soberania ela diz a coisa errada: parece modelo
+ * pronto. O que ocupa o lugar dela e a promessa do produto — a pilula
+ * `.selo-confianca`, que e a mesma da tela inicial.
+ *
+ * Quando houver marca do cliente, ela entra como logo no `.envio-cabeca`, e
+ * o enquadramento continua valendo. */
+.envio-estreito { max-width: 440px; }
+
+.cartao-entrada {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+}
+.cartao-entrada .campo-busca { padding: 0 12px; }
+.cartao-entrada .primario { margin-top: 2px; padding: 10px 16px; }
+
+.cabeca-cartao { display: flex; flex-direction: column; gap: 2px; }
+.cabeca-cartao strong { font-size: 15px; font-weight: 600; }
+
+.campo { display: flex; flex-direction: column; gap: 6px; }
+.campo > span:first-child { font-size: 13px; font-weight: 500; color: var(--texto-2); }
+.campo > small { font-size: 12px; color: var(--texto-3); }
+
+/* Erro da entrada. Não reusa `.erro-envio`, que pressupoe icone e duas
+ * linhas; aqui e uma frase. E nao usa vermelho para o caso de sucesso da
+ * troca de senha, que reaproveita este mesmo paragrafo. */
+.aviso-entrada {
+  margin: 0;
+  padding: 9px 11px;
+  font-size: 13px;
+  border-radius: var(--raio-p);
+  color: var(--perigo);
+  background: var(--perigo-suave);
+  border: 1px solid color-mix(in srgb, var(--perigo) 25%, transparent);
+}
+.aviso-entrada.ok {
+  color: var(--ok);
+  background: var(--ok-suave);
+  border-color: color-mix(in srgb, var(--ok) 25%, transparent);
+}
+
+.nota-entrada {
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--borda);
+  font-size: 12px;
+  color: var(--texto-3);
+}
+
+/* ------------------------------------------- classes sem ocorrencia ------
+ *
+ * A prova de que a ferramenta olhou, recolhida. Ver o comentario em
+ * `montarCategorias`: os zeros saíram da lista principal, mas nao do produto
+ * — "procurei e nao achei" continua distinguivel de "nao sei procurar". */
+.sem-ocorrencia {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--borda);
+  font-size: 12px;
+  color: var(--texto-3);
+}
+.sem-ocorrencia summary { cursor: pointer; }
+.sem-ocorrencia summary:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.sem-ocorrencia p { margin: 8px 0 0; line-height: 1.6; }

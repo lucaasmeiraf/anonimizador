@@ -32,6 +32,8 @@ help:
 	@echo "  shell          shell interativo no container"
 	@echo "  gpu-build      constroi a imagem com torch CUDA"
 	@echo "  gpu-eval       avaliacao usando GPU"
+	@echo "  ui-recarregar  recarrega a UI depois de qualquer alteracao"
+	@echo "  usuario        cria usuario para o modo com login"
 	@echo "  clean          remove saidas geradas"
 	@echo ""
 
@@ -66,11 +68,45 @@ gate-usabilidade-apurar:
 
 ui:
 	$(COMPOSE) up -d ui ui-proxy
+	@echo "aguardando a UI subir..."
+	@for i in $$(seq 1 90); do curl -sf -m 3 http://127.0.0.1:8000/api/saude >/dev/null && break || sleep 2; done
 	@echo ""
+	@$(COMPOSE) exec -T ui python -m anonimizador.web.modo
 	@echo "  interface em http://127.0.0.1:8000"
 	@echo "  o modelo leva ~30 s para carregar; acompanhe com:"
 	@echo "    $(COMPOSE) logs -f ui"
 	@echo ""
+
+# Cria o primeiro usuario para o modo com login. Roda pelo `cli-db`, que e o
+# servico na rede `interna` — o `cli` tem `network_mode: none` e nao alcanca o
+# Postgres. A senha e sorteada e aparece uma vez.
+#
+#   make usuario EMAIL=voce@exemplo.org INQUILINO="Seu Orgao"
+# No Windows sem make, o mesmo alvo existe no run.ps1 e aceita as DUAS
+# sintaxes — a de la e esta:
+#   .\run.ps1 usuario -Email voce@exemplo.org -Inquilino "Seu Orgao"
+usuario:
+	$(COMPOSE) run --rm --entrypoint python cli-db -m anonimizador.cli criar-usuario --email "$(EMAIL)" --inquilino "$(INQUILINO)" --papel "$(or $(PAPEL),dono)"
+
+# Recarrega a interface depois de QUALQUER alteracao. Um comando, sem decidir
+# nada: recria os containers e espera a UI responder.
+#
+# Existe porque a regra de "o que exige reiniciar" nao deveria ser trabalho de
+# quem usa:
+#
+#   .env ou docker-compose.yml   `up -d` ja recria (a config resolvida mudou)
+#   codigo Python                precisa recriar — o uvicorn carrega os
+#                                modulos na subida, e nao roda em --reload
+#   CSS, JS, HTML                nada: os estaticos levam carimbo de versao,
+#                                basta recarregar a pagina
+#
+# Na duvida, rode isto. O custo e os ~30 s do modelo carregando.
+ui-recarregar:
+	$(COMPOSE) up -d --force-recreate ui ui-proxy
+	@echo "aguardando a UI subir..."
+	@for i in $$(seq 1 90); do curl -sf -m 3 http://127.0.0.1:8000/api/saude >/dev/null && break || sleep 2; done
+	@echo ""
+	@$(COMPOSE) exec -T ui python -m anonimizador.web.modo
 
 ui-down:
 	$(COMPOSE) down --remove-orphans

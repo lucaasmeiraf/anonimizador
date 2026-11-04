@@ -14,6 +14,63 @@
  * visitou. Nada disso chega ao servidor nem muda o arquivo.
  */
 
+/* ------------------------------------------------------- CSRF ----------
+ *
+ * Acrescenta o cabeçalho anti-CSRF a toda requisição que altera estado,
+ * envolvendo o `fetch` **uma vez** em vez de tocar em cada chamada.
+ *
+ * É escolha de segurança, não preguiça: há treze pontos de chamada hoje, e o
+ * décimo quarto que alguém acrescentar sem o cabeçalho falharia com 403 em
+ * produção — não no teste. Envolvendo, não há como esquecer.
+ *
+ * O token vem do cookie **legível** que o servidor planta no login. Ele
+ * precisa ser legível justamente para que este código o copie para o
+ * cabeçalho; o de sessão é `HttpOnly` e inacessível aqui, que é o que faz um
+ * XSS não virar roubo de sessão. A proteção vem de o site do atacante não
+ * conseguir ler cookie de outra origem — ele consegue fazer o navegador
+ * *enviar* o cookie, nunca lê-lo.
+ */
+const COOKIE_CSRF = "anon_csrf";
+const CABECALHO_CSRF = "X-CSRF-Token";
+
+function lerCookie(nome) {
+  const alvo = `${nome}=`;
+  for (const parte of document.cookie.split("; ")) {
+    if (parte.startsWith(alvo)) return decodeURIComponent(parte.slice(alvo.length));
+  }
+  return null;
+}
+
+/* O mesmo cabeçalho, para o único ponto que não usa `fetch`.
+ *
+ * O envio do documento usa `XMLHttpRequest`, porque é o único jeito de ter
+ * progresso real de upload — e o envelope abaixo não alcança XHR. Isto
+ * apareceu em produção, não no teste: em modo local não há cookie, o servidor
+ * não exige o cabeçalho, e o defeito ficava invisível até alguém ligar o
+ * login.
+ *
+ * Corolário, já que a lição custou: **envolver o `fetch` não torna impossível
+ * esquecer** — torna impossível esquecer *no fetch*. Transporte novo precisa
+ * passar por aqui, e `test_web_estaticos.py` falha se um XHR aparecer sem
+ * esta chamada.
+ */
+function aplicarCsrf(xhr) {
+  const token = lerCookie(COOKIE_CSRF);
+  if (token) xhr.setRequestHeader(CABECALHO_CSRF, token);
+}
+
+const fetchOriginal = window.fetch.bind(window);
+window.fetch = (recurso, opcoes) => {
+  const op = opcoes || {};
+  const metodo = (op.method || "GET").toUpperCase();
+  if (metodo === "GET" || metodo === "HEAD") return fetchOriginal(recurso, op);
+  const token = lerCookie(COOKIE_CSRF);
+  if (!token) return fetchOriginal(recurso, op); // modo local: não há cookie
+  const cabecalhos = new Headers(op.headers || {});
+  cabecalhos.set(CABECALHO_CSRF, token);
+  return fetchOriginal(recurso, { ...op, headers: cabecalhos });
+};
+
 const ESCALA = 2.0; // deve casar com o padrão de /pagina/{n}.png
 const ESCALA_MINIATURA = 0.5; // o mínimo que a rota aceita
 
@@ -91,10 +148,21 @@ const NOMES_VETORES = {
  * na revisão. A análise por IA entra como mais uma linha aqui —
  * `{ id: "analisar", rotulo: "Analisar com IA" }` — com a regra de status
  * dela em `statusDaEtapa`, sem mexer no layout. */
+/* Três etapas, e eram quatro até 2026-11-03.
+ *
+ * "Verificar" saiu porque **não era uma etapa**: a verificação roda sozinha e
+ * continuamente durante a revisão, e o clique nela só filtrava a lista pelas
+ * pendências. Ela acendia junto com "Revisar", pelo mesmo motivo — as duas
+ * descreviam a mesma atividade. O filtro continua, no selo de verificação,
+ * que é onde ele sempre pertenceu.
+ *
+ * O sinal não se perdeu: "Revisar" agora carrega o estado da verificação —
+ * `!` quando sobrou vazamento, `✓` quando a pré-verificação passou. Perder o
+ * aviso seria inaceitável; perder o passo redundante, não.
+ */
 const ETAPAS = [
   { id: "enviar", rotulo: "Enviar" },
   { id: "revisar", rotulo: "Revisar" },
-  { id: "verificar", rotulo: "Verificar" },
   { id: "exportar", rotulo: "Exportar" },
 ];
 
@@ -370,6 +438,11 @@ function enviarArquivo(arquivo) {
   const este = { xhr, cancelado: false, subiu: false };
   envioAtual = este;
   xhr.open("POST", "/api/doc");
+  // O envelope do `fetch` nao alcanca o XHR, e este e o UNICO ponto que usa
+  // XHR — por causa do progresso de envio. Sem esta linha o upload morria com
+  // 403 do CSRF, e so no modo com login: em modo local nao ha cookie, o
+  // servidor nao exige o cabecalho, e o defeito ficava invisivel.
+  aplicarCsrf(xhr);
   xhr.upload.addEventListener("progress", (e) => {
     if (e.lengthComputable && !este.cancelado) {
       $("envio-pct").textContent = `${Math.round((100 * e.loaded) / e.total)}%`;
@@ -576,8 +649,155 @@ async function restaurarSessao() {
   }
 }
 
-montarEtapas();
-restaurarSessao();
+/* ------------------------------------------------- entrada ------------
+ *
+ * A abertura pergunta quem é **antes** de montar o resto. Em modo local
+ * (`ANON_EXIGIR_LOGIN` desligado) `/api/eu` responde `exige_login: false` e
+ * nada disto aparece — o perímetro é o endereço, e pedir senha ali seria
+ * cerimônia sem ganho.
+ */
+function mostrarTela(qual) {
+  for (const id of ["tela-login", "tela-upload", "tela-revisao"]) {
+    $(id).classList.toggle("hidden", id !== qual);
+  }
+  // Sem sessão não há documento, e as ações do topo não têm sobre o que agir.
+  $("etapas").classList.toggle("hidden", qual === "tela-login");
+  $("btn-atalhos").classList.toggle("hidden", qual === "tela-login");
+}
+
+function erroEm(id, mensagem, ok = false) {
+  const e = $(id);
+  e.textContent = mensagem;
+  e.classList.toggle("hidden", !mensagem);
+  // O mesmo parágrafo serve para a confirmação da troca de senha, que não é
+  // erro. Pintar de vermelho um "deu certo" é dizer a coisa errada.
+  e.classList.toggle("ok", Boolean(ok));
+}
+
+async function abrir() {
+  montarEtapas();
+
+  let eu = null;
+  try {
+    const r = await fetch("/api/eu");
+    if (r.status === 401) {
+      mostrarTela("tela-login");
+      $("login-email").focus();
+      return;
+    }
+    eu = await r.json();
+  } catch {
+    // Servidor fora do ar na abertura: segue para a tela normal, que já sabe
+    // mostrar falha de rede quando o usuário tentar enviar algo.
+    eu = { exige_login: false };
+  }
+
+  if (eu.exige_login) {
+    $("btn-sair").classList.remove("hidden");
+    if (eu.troca_senha_obrigatoria) {
+      // Cai direto na troca, sem passar pela tela principal: sem essa trava a
+      // senha temporária vira permanente.
+      mostrarTela("tela-login");
+      $("form-entrar").classList.add("hidden");
+      $("form-trocar").classList.remove("hidden");
+      $("troca-atual").focus();
+      return;
+    }
+  }
+
+  mostrarTela("tela-upload");
+  restaurarSessao();
+}
+
+$("form-entrar").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const botao = $("btn-entrar");
+  botao.disabled = true;
+  erroEm("login-erro", "");
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: $("login-email").value,
+        senha: $("login-senha").value,
+      }),
+    });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      erroEm("login-erro", dados.detail || "não foi possível entrar");
+      return;
+    }
+    $("login-senha").value = "";
+    if (dados.troca_senha_obrigatoria) {
+      $("form-entrar").classList.add("hidden");
+      $("form-trocar").classList.remove("hidden");
+      $("troca-atual").focus();
+      return;
+    }
+    $("btn-sair").classList.remove("hidden");
+    mostrarTela("tela-upload");
+    restaurarSessao();
+  } catch {
+    erroEm("login-erro", "não foi possível falar com o servidor");
+  } finally {
+    botao.disabled = false;
+  }
+});
+
+$("form-trocar").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if ($("troca-nova").value !== $("troca-repete").value) {
+    erroEm("troca-erro", "as duas senhas novas não são iguais");
+    return;
+  }
+  const botao = $("btn-trocar");
+  botao.disabled = true;
+  erroEm("troca-erro", "");
+  try {
+    const r = await fetch("/api/senha", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        atual: $("troca-atual").value,
+        nova: $("troca-nova").value,
+      }),
+    });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      erroEm(
+        "troca-erro",
+        dados.detail || "não foi possível trocar a senha"
+      );
+      return;
+    }
+    // A troca derruba TODAS as sessões, inclusive esta — de propósito. Volta
+    // para a entrada com a senha nova.
+    for (const id of ["troca-atual", "troca-nova", "troca-repete"]) {
+      $(id).value = "";
+    }
+    $("form-trocar").classList.add("hidden");
+    $("form-entrar").classList.remove("hidden");
+    erroEm("login-erro", "Senha trocada. Entre com a senha nova.", true);
+    $("login-email").focus();
+  } catch {
+    erroEm("troca-erro", "não foi possível falar com o servidor");
+  } finally {
+    botao.disabled = false;
+  }
+});
+
+$("btn-sair").addEventListener("click", async () => {
+  try {
+    await fetch("/api/logout", { method: "POST" });
+  } catch {
+    /* sair da tela importa mais que o resultado da chamada */
+  }
+  esquecerSessao();
+  location.reload();
+});
+
+abrir();
 
 // --------------------------------------------------------------- montagem
 function montarRevisao() {
@@ -585,8 +805,10 @@ function montarRevisao() {
   $("tela-revisao").classList.remove("hidden");
   $("cabecalho-doc").classList.remove("hidden");
   $("btn-principal").classList.remove("hidden");
+  // O nome vive na barra do visualizador, ao centro. O `title` carrega o nome
+  // inteiro, porque o truncamento esconde o começo.
   $("nome-arquivo").textContent = doc.nome_arquivo;
-  $("btn-arquivo").title = doc.nome_arquivo;
+  $("nome-arquivo").title = doc.nome_arquivo;
   document.title = `${doc.nome_arquivo} — Anonimizador`;
 
   estado.revisados = lerRevisados(doc.doc_id);
@@ -1202,14 +1424,12 @@ function fecharPopovers() {
   popoverMarca.classList.add("hidden");
   $("popover-atalhos").classList.add("hidden");
   $("btn-atalhos").setAttribute("aria-expanded", "false");
-  fecharMenuArquivo();
 }
 
 document.addEventListener("mousedown", (e) => {
-  if (!e.target.closest(".popover, .menu, #btn-arquivo, #btn-atalhos, .tarja")) {
+  if (!e.target.closest(".popover, #btn-atalhos, .tarja")) {
     popoverMarca.classList.add("hidden");
     $("popover-atalhos").classList.add("hidden");
-    fecharMenuArquivo();
   }
 });
 
@@ -1257,29 +1477,20 @@ function passo(delta) {
   focar(lista[i].id);
   fecharInspetorEstreito();
 }
-$("btn-proximo").addEventListener("click", () => passo(1));
-$("btn-anterior").addEventListener("click", () => passo(-1));
+// `passo` continua: J e K navegam entre as ocorrências, e o painel de
+// atalhos documenta isso. Os botões anterior/próximo saíram da tela em
+// 2026-11-03 — a função é de teclado, e os botões só ocupavam o topo da aba.
 
 // --------------------------------------------------------------- resumo
 function montarResumo() {
-  const ativos = doc.spans.filter((s) => s.sera_tarjado);
-  const paginas = new Set();
-  for (const s of ativos) for (const r of s.rects) paginas.add(r.pagina);
-  $("resumo-deteccoes").textContent = ativos.length
-    ? `${ativos.length} ${ativos.length === 1 ? "dado será anonimizado" : "dados serão anonimizados"} ` +
-      `em ${paginas.size} ${paginas.size === 1 ? "página" : "páginas"}`
-    : "Nenhum dado marcado para anonimizar";
-
-  const revisados = ativos.filter((s) => estado.revisados.has(s.id)).length;
-  const pct = ativos.length ? (100 * revisados) / ativos.length : 0;
-  $("barra-revisao-cheia").style.width = `${pct}%`;
-  $("barra-revisao").setAttribute("aria-valuemax", String(ativos.length));
-  $("barra-revisao").setAttribute("aria-valuenow", String(revisados));
-  $("texto-revisao").textContent = ativos.length ? `${revisados} de ${ativos.length} revisados` : "";
-  const temNavegacao = navegaveis().length > 0;
-  $("btn-proximo").disabled = !temNavegacao;
-  $("btn-anterior").disabled = !temNavegacao;
-
+  // Só o estado vazio. A contagem e a barra de "revisados" saíram em
+  // 2026-11-03: `estado.revisados` conta o que o revisor **visitou**, e
+  // visitar não é revisar — a barra mostrava um progresso que o sistema não
+  // tem como aferir. O que é medido de verdade (o que sai do documento, e se
+  // sobrou vazamento) continua no selo de verificação.
+  //
+  // `estado.revisados` continua existindo: ele marca na lista o que já foi
+  // visitado, que é informação honesta sobre onde o olho passou.
   $("vazio-deteccoes").classList.toggle("hidden", doc.spans.length > 0);
 }
 
@@ -1323,9 +1534,30 @@ function montarCategorias() {
     porEntidade.get(s.entity).push(s);
   }
 
+  /* Classes sem nenhuma ocorrência saem da lista, e voltam sozinhas no
+   * instante em que algo é classificado nelas — porque a lista é montada a
+   * partir dos spans, não de uma lista fixa.
+   *
+   * ISTO CONTRARIA, EM PARTE, A DECISÃO REGISTRADA EM `Sessao.inventario`:
+   * lá os zeros aparecem de propósito, porque "procurei CNH e não achei" e
+   * "não sei procurar CNH" são coisas muito diferentes que somem da tela do
+   * mesmo jeito, e a leitura natural da ausência é a segunda.
+   *
+   * O argumento continua válido, então a prova não foi jogada fora — ela foi
+   * para uma linha só, no fim da lista, que diz quantas classes foram
+   * conferidas e permite abrir os nomes. Dezesseis linhas zeradas competindo
+   * por atenção com seis que importam era o custo; uma linha recolhida não é.
+   *
+   * O servidor continua mandando o inventário completo, com os zeros. Quem
+   * decide o que mostrar é a tela, que é onde essa decisão pertence. */
+  const semOcorrencia = [...porEntidade.keys()]
+    .filter((e) => !porEntidade.get(e).length)
+    .map((e) => categoria(e).nome)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+
   for (const g of GRUPOS) {
     const entidades = [...porEntidade.keys()]
-      .filter((e) => categoria(e).grupo === g.id)
+      .filter((e) => categoria(e).grupo === g.id && porEntidade.get(e).length)
       .sort((a, b) => {
         const ordem = Object.keys(CATEGORIAS);
         const ia = ordem.indexOf(a);
@@ -1344,6 +1576,23 @@ function montarCategorias() {
     for (const ent of entidades) bloco.appendChild(linhaCategoria(ent, porEntidade.get(ent)));
     caixa.appendChild(bloco);
   }
+
+  if (semOcorrencia.length) {
+    // `<details>` nativo: abre e fecha sem estado nosso, e o leitor de tela
+    // já sabe anunciar "expandido/recolhido".
+    const d = document.createElement("details");
+    d.className = "sem-ocorrencia";
+    const resumo = document.createElement("summary");
+    resumo.textContent =
+      semOcorrencia.length === 1
+        ? "1 classe conferida, sem ocorrência"
+        : `${semOcorrencia.length} classes conferidas, sem ocorrência`;
+    const lista = document.createElement("p");
+    lista.textContent = semOcorrencia.join(" · ");
+    d.append(resumo, lista);
+    caixa.appendChild(d);
+  }
+
   $("painel-deteccoes").scrollTop = rolagem;
   if (estado.focado) destacarNaLista(estado.focado);
 }
@@ -2136,13 +2385,18 @@ function statusDaEtapa(id) {
   // Tela inicial: só "Enviar" existe ainda; o resto é o caminho à frente.
   if (!doc) return id === "enviar" ? "atual" : "futuro";
   if (id === "enviar") return "feito";
-  const p = previaAtual();
-  if (id === "revisar") return estado.aba === "exportar" || estado.sucesso ? "feito" : "atual";
-  if (id === "verificar") {
-    if (!algumAtivo()) return "futuro";
+
+  if (id === "revisar") {
+    // O estado da REVISÃO é o estado da verificação, porque é ela que diz se
+    // a revisão terminou. Antes isto era `estado.aba === "exportar"`, ou
+    // seja: trocar de aba marcava a revisão como concluída sem que nada
+    // tivesse sido conferido. Progresso que o sistema não media.
+    if (!algumAtivo()) return "atual";
+    const p = previaAtual();
     if (!p || estado.verificando) return "atual";
     return p.ok ? "feito" : "atencao";
   }
+
   if (id === "exportar") {
     if (estado.sucesso) return "feito";
     return estado.aba === "exportar" ? "atual" : "futuro";
@@ -2180,10 +2434,6 @@ function irParaEtapa(id) {
   // Voltar a "Enviar" é trocar de documento: descarta este, com confirmação.
   if (id === "enviar") return abrirModal(() => abrirSeletor());
   if (id === "revisar") selecionarAba("deteccoes");
-  if (id === "verificar") {
-    selecionarAba("deteccoes");
-    alternarPendencias(true);
-  }
   if (id === "exportar") selecionarAba("exportar");
   abrirInspetorEstreito();
 }
@@ -2339,14 +2589,28 @@ function montarAvisos() {
   if (c.anexos) {
     item(`${c.anexos} ${c.anexos === 1 ? "arquivo anexado será removido" : "arquivos anexados serão removidos"}.`);
   }
-  item("Metadados são zerados: autor, título, data de criação, produtor.");
-  item("Layout, paginação e fontes ficam intactos — não há refluxo.");
+  /* Saíram em 2026-11-03 os dois itens INCONDICIONAIS — "metadados são
+   * zerados" e "layout fica intacto". Eram os únicos que apareciam num
+   * documento comum, e eram justamente os que não pediam ação nenhuma: um diz
+   * que algo melhorou, o outro que nada mudou.
+   *
+   * O resto da lista FICA, e a diferença importa: assinatura digital
+   * invalidada, páginas que a detecção não leu, links, sumário e anexos
+   * removidos são condicionais — só aparecem quando valem para aquele
+   * arquivo, e aí precisam aparecer. A de assinatura tem peso jurídico; a de
+   * páginas sem texto é risco de vazamento.
+   *
+   * Com os incondicionais fora, a seção inteira desaparece quando não há nada
+   * a avisar — que é o caso comum, e é o que o pedido queria ver. */
+  $("secao-avisos").classList.toggle("hidden", ul.children.length === 0);
 }
 
 function saidasEscolhidas() {
+  // Só o PDF é entregável ao usuário. O texto com códigos saiu daqui em
+  // 2026-11-03: ele existe para alimentar o envio à IA, e o envio o gera
+  // sozinho. Continua com gate próprio no servidor — não virou atalho.
   const s = [];
   if ($("saida-pdf").checked) s.push("pdf");
-  if ($("saida-texto").checked) s.push("texto");
   return s;
 }
 
@@ -2362,11 +2626,10 @@ function atualizarSaidas() {
     : `Indisponível agora: ${analiseMotivo}.`;
   $("bloco-analise").classList.toggle("hidden", !ia.checked);
   $("btn-gerar").disabled = !algumAtivo() || !saidasEscolhidas().length || estado.ocupado;
-  $("btn-previa-texto").disabled = !algumAtivo();
   $("sugestao-codigo").classList.toggle("hidden", modoAtual() === "pseudonimo" || !ia.checked);
 }
 
-for (const id of ["saida-pdf", "saida-texto"]) {
+for (const id of ["saida-pdf"]) {
   $(id).addEventListener("change", () => {
     atualizarSaidas();
     atualizarBotaoPrincipal();
@@ -2378,16 +2641,6 @@ $("saida-ia").addEventListener("change", () => {
   // Para enviar, o texto precisa existir e ser lido antes. Gerar é local.
   if ($("saida-ia").checked && !doc.pode_baixar_texto) executar(gerarTexto);
 });
-
-$("btn-previa-texto").addEventListener("click", () =>
-  executar(async () => {
-    if (!doc.pode_baixar_texto) await gerarTexto();
-    if (doc.pode_baixar_texto) {
-      $("previa-texto").open = true;
-      $("texto-gerado").scrollIntoView({ block: "nearest" });
-    }
-  })
-);
 
 function limparResultado() {
   $("resultado").classList.add("hidden");
@@ -2449,14 +2702,9 @@ async function gerar() {
         return;
       }
     }
-    if (saidas.includes("texto") && !doc.pode_baixar_texto) {
-      await gerarTexto();
-      if (!doc.pode_baixar_texto) return;
-    }
     estado.sucesso = true;
     estado.exportou = true;
-    if (saidas.includes("pdf")) baixar(`/api/doc/${doc.doc_id}/download`);
-    else baixar(`/api/doc/${doc.doc_id}/download/texto`);
+    baixar(`/api/doc/${doc.doc_id}/download`);
     abrirSucesso(saidas);
   } finally {
     travar(false);
@@ -2556,10 +2804,6 @@ function abrirSucesso(saidas) {
     }
     li(`${rel.valores_checados} valores conferidos em ${rel.vetores.length} vetores; nenhum sobreviveu`);
   }
-  if (saidas.includes("texto") && doc.relatorio_texto) {
-    const t = doc.relatorio_texto;
-    li(`Texto: ${t.spans_substituidos} trechos substituídos por ${t.tokens_distintos} códigos`);
-  }
   if (doc.caracteristicas && doc.caracteristicas.assinatura) {
     li("A assinatura digital do original não vale para este arquivo.");
   }
@@ -2570,12 +2814,6 @@ function abrirSucesso(saidas) {
     const a = document.createElement("a");
     a.href = `/api/doc/${doc.doc_id}/download`;
     a.innerHTML = `${icone("download")} PDF anonimizado`;
-    dl.appendChild(a);
-  }
-  if (doc.pode_baixar_texto) {
-    const a = document.createElement("a");
-    a.href = `/api/doc/${doc.doc_id}/download/texto`;
-    a.innerHTML = `${icone("download")} Texto com códigos (.txt)`;
     dl.appendChild(a);
   }
   abrirModalEl($("tela-sucesso"), $("proximo-novo"));
@@ -2644,7 +2882,6 @@ function sincronizarAnalise() {
     `${rel.spans_substituidos} trechos substituídos por ${rel.tokens_distintos} ` +
     `códigos. Conferido: nenhum dos ${rel.valores_checados} valores ` +
     `substituídos sobreviveu, e todo código está no texto.`;
-  $("link-texto").href = `/api/doc/${doc.doc_id}/download/texto`;
 
   const n = NOMES_ESCAPADOS_EM_50[nerAtivo];
   $("taxa-nomes").textContent =
@@ -2867,23 +3104,18 @@ function fecharAoClicarFora(fundo) {
   });
 }
 
-/* Menu do arquivo. Descartar mora aqui, atrás de um menu e de uma
- * confirmação — não como um botão do mesmo peso que qualquer outro, ao lado
- * do nome do arquivo. */
-function fecharMenuArquivo() {
-  $("menu-arquivo").classList.add("hidden");
-  $("btn-arquivo").setAttribute("aria-expanded", "false");
-}
-
-$("btn-arquivo").addEventListener("click", () => {
-  const abrir = $("menu-arquivo").classList.contains("hidden");
-  fecharPopovers();
-  if (abrir) {
-    $("menu-arquivo").classList.remove("hidden");
-    $("btn-arquivo").setAttribute("aria-expanded", "true");
-    $("menu-arquivo").querySelector("button").focus();
-  }
-});
+/* O menu suspenso do arquivo saiu em 2026-11-03, a pedido: "Trocar" e
+ * "Descartar" sao botoes visiveis, com icone e rotulo.
+ *
+ * O comentario anterior dizia que Descartar morava atras de um menu para nao
+ * ser "um botao do mesmo peso que qualquer outro". O argumento era sobre
+ * PESO, nao sobre o menu — e a protecao de verdade nunca foi o menu: e a
+ * confirmacao logo abaixo, que explica o que esta sendo destruido e e a unica
+ * coisa entre o clique e a perda do original.
+ *
+ * O peso continua diferenciado por estilo (`.acao-perigo`, em vermelho). O
+ * que se perde e um clique de atrito; o que nao se perde e a confirmacao.
+ */
 
 /* Confirmação de descarte. Não é só estética: o diálogo do navegador não
  * permite explicar **o que** está sendo destruído, e aqui a ação apaga o
@@ -2892,7 +3124,6 @@ const modalFundo = $("modal-fundo");
 let depoisDeDescartar = null;
 
 function abrirModal(depois = null) {
-  fecharMenuArquivo();
   depoisDeDescartar = depois;
   // `estado.exportou`, e não só `pode_baixar`: editar depois de baixar apaga
   // o arquivo no servidor, mas o que foi baixado continua com o usuário — e

@@ -143,6 +143,7 @@ errada é a principal forma de introduzir bug aqui.
 | Pseudônimo | `pseudonimo.py` | token e substituição em texto | PDF, disco, política |
 | Verificação | `verifier.py` | 10 vetores no PDF (11 com token), 2 no texto | qualquer confiança no redator |
 | Política | `politica.py` | operador por entidade, validação | execução |
+| Identidade | `web/auth.py` | hash de senha, sessão de login, limite de tentativa | HTTP, cookie, código de status |
 | Estado + travas | `web/sessao.py` | **todas** as regras da UI | transporte |
 | Transporte | `web/app.py` | HTTP, códigos de status | regra de decisão |
 | Egress | `web/analise.py` | falar com o OpenRouter | documento, detecção, disco |

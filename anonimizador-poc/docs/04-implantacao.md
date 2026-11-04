@@ -305,7 +305,54 @@ Exportar** — e, na revisão, o botão principal, sempre visível.
 > de reprovar o documento, e a tela diz quantos são — por categoria, na aba
 > *Ajustes* — antes de você exportar. O texto para IA usa código em todos.
 
-### 4. Derrubar
+### 4. Depois de alterar alguma coisa
+
+**Na dúvida, um comando:**
+
+```powershell
+.\run.ps1 ui-recarregar     # make ui-recarregar
+```
+
+Ele recria os containers, espera a UI responder e **diz em que modo subiu**.
+Custa os ~30 s do modelo carregando, e não exige decidir nada.
+
+A regra, para quando você quiser economizar esse tempo:
+
+| O que você mudou | O que precisa |
+|---|---|
+| `CSS`, `JS`, `HTML` | **nada** — recarregue a página. Os estáticos levam carimbo de versão pela data de modificação, então o cache não atrapalha |
+| `.env` ou `docker-compose.yml` | `.\run.ps1 ui` já basta: a configuração resolvida mudou, e o compose recria sozinho |
+| Código Python | **recriar** — o uvicorn carrega os módulos na subida e não roda em modo reload |
+| Migração de banco | `.\run.ps1 ui-recarregar`, e aplique a migração antes |
+
+> **Por que o serviço não roda em `--reload`.** Ele carrega ~1 GB de pesos do
+> NER na subida, e o reload os recarregaria a cada arquivo salvo. O
+> `ui-recarregar` explícito é mais rápido na prática que um reload que dispara
+> sozinho a cada `Ctrl+S`.
+
+### 5. Ligar o login
+
+O padrão é **modo local**: a porta sai em `127.0.0.1` e o perímetro é o
+endereço. Para exigir identificação:
+
+```powershell
+# 1. crie o usuario ANTES de ligar, ou voce se tranca do lado de fora
+.\run.ps1 usuario -Email voce@exemplo.org -Inquilino "Seu Orgao"
+#    anote a senha: ela aparece uma vez e vale para um login so
+
+# 2. no .env
+#    ANON_EXIGIR_LOGIN=1
+
+# 3. recarregue
+.\run.ps1 ui-recarregar
+```
+
+A saída do passo 3 confirma: `modo: COM LOGIN`. O primeiro acesso cai direto
+na tela de troca de senha.
+
+Para voltar ao modo local, tire o `1` do `.env` e recarregue.
+
+### 6. Derrubar
 
 ```powershell
 .\run.ps1 ui-down     # ou:  docker compose down

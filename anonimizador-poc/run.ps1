@@ -4,10 +4,32 @@
 #   .\run.ps1 eval
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('build','test','test-all','corpus','eval','eval-fast','diagnostico','gate-usabilidade','gate-usabilidade-apurar','ui','ui-down','ui-proof','ui-llm','llm-proof','offline-proof',
-                 'demo','shell','gpu-build','gpu-eval','clean','help')]
-    [string]$Target = 'help'
+    [ValidateSet('build','test','test-all','corpus','eval','eval-fast','diagnostico','gate-usabilidade','gate-usabilidade-apurar','ui','ui-recarregar','ui-down','ui-proof','ui-llm','llm-proof','offline-proof',
+                 'demo','shell','usuario','gpu-build','gpu-eval','clean','help')]
+    [string]$Target = 'help',
+
+    # Para o alvo `usuario`.
+    [string]$Email,
+    [string]$Inquilino,
+    [ValidateSet('operador','dono','plataforma')]
+    [string]$Papel = 'dono',
+
+    # Aceita tambem a sintaxe do Makefile (EMAIL=... INQUILINO=...), porque o
+    # README e o docs/04 mostram `make usuario` e ninguem deveria ter que
+    # lembrar qual das duas formas serve para qual sistema.
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Resto
 )
+
+foreach ($arg in $Resto) {
+    if ($arg -match '^(?<k>[A-Za-z_]+)=(?<v>.*)$') {
+        switch ($Matches['k'].ToUpper()) {
+            'EMAIL'     { $Email = $Matches['v'] }
+            'INQUILINO' { $Inquilino = $Matches['v'] }
+            'PAPEL'     { $Papel = $Matches['v'] }
+        }
+    }
+}
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
@@ -26,10 +48,45 @@ switch ($Target) {
     'gate-usabilidade-apurar' { docker compose run --rm gate-usabilidade --apurar /app/eval/gate-usabilidade/registro.csv }
     'ui'            {
         docker compose up -d ui ui-proxy
+        Write-Host 'aguardando a UI subir (o modelo leva ~30 s)...'
+        $ok = $false
+        foreach ($i in 1..90) {
+            try {
+                Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/saude' -TimeoutSec 3 | Out-Null
+                $ok = $true; break
+            } catch { Start-Sleep -Seconds 2 }
+        }
         Write-Host ''
+        if ($ok) {
+            # Dizer o modo a cada subida: o servico sobe igual nos dois, e
+            # descobrir por acidente que esta aberto e tarde.
+            docker compose exec -T ui python -m anonimizador.web.modo
+        } else {
+            Write-Host '  a UI ainda nao respondeu; acompanhe com:'
+            Write-Host '    docker compose logs -f ui'
+        }
         Write-Host '  interface em http://127.0.0.1:8000'
-        Write-Host '  o modelo leva ~30 s para carregar; acompanhe com:'
-        Write-Host '    docker compose logs -f ui'
+        Write-Host ''
+    }
+    'ui-recarregar' {
+        # Um comando depois de QUALQUER alteracao, sem decidir nada. A regra
+        # de o que exige reiniciar nao deveria ser trabalho de quem usa:
+        #   .env / docker-compose.yml  -> `up -d` ja recria
+        #   codigo Python              -> precisa recriar (uvicorn sem reload)
+        #   CSS / JS / HTML            -> nada; basta recarregar a pagina
+        docker compose up -d --force-recreate ui ui-proxy
+        Write-Host 'aguardando a UI subir...'
+        $ok = $false
+        foreach ($i in 1..90) {
+            try {
+                Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/saude' -TimeoutSec 3 | Out-Null
+                $ok = $true; break
+            } catch { Start-Sleep -Seconds 2 }
+        }
+        if (-not $ok) { Write-Error 'a UI nao respondeu'; exit 1 }
+        Write-Host ''
+        docker compose exec -T ui python -m anonimizador.web.modo
+        Write-Host '  interface em http://127.0.0.1:8000'
         Write-Host ''
     }
     'ui-down'       { docker compose down --remove-orphans }
@@ -76,6 +133,22 @@ switch ($Target) {
             --out /app/out/contrato-000.redigido.pdf
     }
     'shell'         { docker compose run --rm dev }
+    'usuario'       {
+        if (-not $Email -or -not $Inquilino) {
+            Write-Host ''
+            Write-Host '  uso:'
+            Write-Host '    .\run.ps1 usuario -Email voce@exemplo.org -Inquilino "Seu Orgao"'
+            Write-Host '    .\run.ps1 usuario EMAIL=voce@exemplo.org INQUILINO="Seu Orgao"'
+            Write-Host ''
+            Write-Host '  -Papel aceita operador, dono (padrao) ou plataforma.'
+            Write-Host ''
+            exit 1
+        }
+        # Pelo `cli-db`, que e o servico na rede `interna`: o `cli` roda em
+        # `network_mode: none` e nao alcanca o Postgres.
+        docker compose run --rm --entrypoint python cli-db -m anonimizador.cli `
+            criar-usuario --email $Email --inquilino $Inquilino --papel $Papel
+    }
     'gpu-build'     { docker compose @gpu build }
     'gpu-eval'      { docker compose @gpu run --rm eval }
     'clean'         {
@@ -97,6 +170,7 @@ switch ($Target) {
         Write-Host '  gate-usabilidade         monta a sessao de revisao com pessoas'
         Write-Host '  gate-usabilidade-apurar  le o registro.csv preenchido'
         Write-Host '  ui             sobe a interface em http://127.0.0.1:8000'
+        Write-Host '  ui-recarregar  recarrega a UI depois de qualquer alteracao'
         Write-Host '  ui-down        derruba a interface'
         Write-Host '  ui-proof       prova que a UI responde E nao tem egress'
         Write-Host '  ui-llm         sobe a UI + o servico de analise por LLM externa'
@@ -104,6 +178,8 @@ switch ($Target) {
         Write-Host '  offline-proof  prova que o pipeline roda sem rede'
         Write-Host '  demo           redige um documento do corpus'
         Write-Host '  shell          shell interativo no container'
+        Write-Host '  usuario        cria usuario para o modo com login'
+        Write-Host '                   .\run.ps1 usuario -Email voce@ex.org -Inquilino "Seu Orgao"'
         Write-Host '  gpu-build      constroi a imagem com torch CUDA'
         Write-Host '  gpu-eval       avaliacao usando GPU'
         Write-Host '  clean          remove saidas geradas'
