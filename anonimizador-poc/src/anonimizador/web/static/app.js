@@ -693,7 +693,11 @@ async function abrir() {
   }
 
   if (eu.exige_login) {
+    euSou = eu;
     $("btn-sair").classList.remove("hidden");
+    // Só o dono administra acessos. O servidor recusa de qualquer forma;
+    // esconder é para não oferecer o que a pessoa não pode fazer.
+    $("btn-config").classList.toggle("hidden", eu.papel !== "dono");
     if (eu.troca_senha_obrigatoria) {
       // Cai direto na troca, sem passar pela tela principal: sem essa trava a
       // senha temporária vira permanente.
@@ -785,6 +789,188 @@ $("form-trocar").addEventListener("submit", async (e) => {
   } finally {
     botao.disabled = false;
   }
+});
+
+/* ------------------------------------------------ configurações ---------
+ *
+ * Só o dono do inquilino vê o botão. A tela esconder não é a trava: o
+ * servidor responde 403 a quem não é dono, e é lá que a regra mora. Esconder
+ * é para não oferecer o que a pessoa não pode fazer.
+ */
+let euSou = null;
+
+function abrirConfig() {
+  $("config-fundo").classList.remove("hidden");
+  $("senha-gerada").classList.add("hidden");
+  erroEm("config-erro", "");
+  carregarUsuarios();
+}
+
+function fecharConfig() {
+  $("config-fundo").classList.add("hidden");
+}
+
+async function carregarUsuarios() {
+  const ul = $("lista-usuarios");
+  ul.innerHTML = "";
+  let dados;
+  try {
+    const r = await fetch("/api/usuarios");
+    if (!r.ok) {
+      erroEm("config-erro", "não foi possível carregar a lista");
+      return;
+    }
+    dados = await r.json();
+  } catch {
+    erroEm("config-erro", "não foi possível falar com o servidor");
+    return;
+  }
+
+  for (const u of dados.usuarios) {
+    const li = document.createElement("li");
+    li.className = "linha-usuario" + (u.ativo ? "" : " inativo");
+
+    const id = document.createElement("div");
+    id.className = "usuario-id";
+    const email = document.createElement("span");
+    email.className = "usuario-email";
+    email.textContent = u.email;
+    const meta = document.createElement("span");
+    meta.className = "usuario-meta";
+    meta.textContent = u.troca_senha_obrigatoria
+      ? "ainda não trocou a senha do primeiro acesso"
+      : u.ultimo_acesso
+        ? `último acesso: ${new Date(u.ultimo_acesso).toLocaleString("pt-BR")}`
+        : "nunca entrou";
+    id.append(email, meta);
+
+    const papel = document.createElement("span");
+    papel.className = "etiqueta" + (u.papel === "dono" ? "" : " cinza");
+    papel.textContent = u.papel === "dono" ? "dono" : "operador";
+
+    li.append(id, papel);
+
+    if (!u.sou_eu) {
+      // Confirmação em dois toques, no próprio botão. Nada de `confirm()`:
+      // a caixa do navegador destoa da interface e não explica o que faz —
+      // aqui o segundo rótulo diz exatamente a consequência.
+      const redefinir = document.createElement("button");
+      redefinir.className = "secundario pequeno";
+      redefinir.textContent = "Nova senha";
+      redefinir.title = "Gera uma senha temporária e derruba as sessões desta pessoa";
+      let armado = null;
+      redefinir.addEventListener("click", () => {
+        if (armado) {
+          clearTimeout(armado);
+          armado = null;
+          redefinir.textContent = "Nova senha";
+          redefinir.classList.remove("perigo");
+          redefinirSenha(u);
+          return;
+        }
+        redefinir.textContent = "Confirmar — derruba as sessões";
+        redefinir.classList.add("perigo");
+        armado = setTimeout(() => {
+          armado = null;
+          redefinir.textContent = "Nova senha";
+          redefinir.classList.remove("perigo");
+        }, 4000);
+      });
+      const alternar = document.createElement("button");
+      alternar.className = "secundario pequeno";
+      alternar.textContent = u.ativo ? "Desativar" : "Reativar";
+      alternar.addEventListener("click", () => alternarUsuario(u));
+      li.append(redefinir, alternar);
+    }
+    ul.appendChild(li);
+  }
+}
+
+function mostrarSenha(senha) {
+  $("senha-valor").textContent = senha;
+  $("senha-gerada").classList.remove("hidden");
+  $("senha-gerada").scrollIntoView({ block: "nearest" });
+}
+
+$("form-novo-usuario").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  erroEm("config-erro", "");
+  const botao = $("btn-criar-usuario");
+  botao.disabled = true;
+  try {
+    const r = await fetch("/api/usuarios", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: $("novo-email").value,
+        papel: $("novo-papel").value,
+      }),
+    });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      erroEm("config-erro", dados.detail || "não foi possível criar o acesso");
+      return;
+    }
+    $("novo-email").value = "";
+    mostrarSenha(dados.senha);
+    carregarUsuarios();
+  } catch {
+    erroEm("config-erro", "não foi possível falar com o servidor");
+  } finally {
+    botao.disabled = false;
+  }
+});
+
+async function redefinirSenha(u) {
+  erroEm("config-erro", "");
+  try {
+    const r = await fetch(`/api/usuarios/${u.id}/senha`, { method: "POST" });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      erroEm("config-erro", dados.detail || "não foi possível redefinir");
+      return;
+    }
+    mostrarSenha(dados.senha);
+    carregarUsuarios();
+  } catch {
+    erroEm("config-erro", "não foi possível falar com o servidor");
+  }
+}
+
+async function alternarUsuario(u) {
+  erroEm("config-erro", "");
+  try {
+    const r = await fetch(`/api/usuarios/${u.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ativo: !u.ativo }),
+    });
+    const dados = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      erroEm("config-erro", dados.detail || "não foi possível alterar");
+      return;
+    }
+    carregarUsuarios();
+  } catch {
+    erroEm("config-erro", "não foi possível falar com o servidor");
+  }
+}
+
+$("btn-copiar-senha").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("senha-valor").textContent);
+    $("btn-copiar-senha").textContent = "Copiado";
+    setTimeout(() => ($("btn-copiar-senha").textContent = "Copiar"), 1500);
+  } catch {
+    // Área de transferência bloqueada: o código continua na tela para
+    // seleção manual, que é o que importa.
+  }
+});
+
+$("btn-config").addEventListener("click", abrirConfig);
+$("config-fechar").addEventListener("click", fecharConfig);
+$("config-fundo").addEventListener("click", (e) => {
+  if (e.target === $("config-fundo")) fecharConfig();
 });
 
 $("btn-sair").addEventListener("click", async () => {

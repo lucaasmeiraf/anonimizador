@@ -544,6 +544,410 @@ Três disciplinas operacionais que valem mais do que parecem:
 
 ---
 
+# C2. Mostrar o sistema sem hospedar
+
+O caminho mais rápido para alguém **fora da sua rede** usar o sistema não é um
+VPS: é um túnel temporário a partir da sua própria máquina.
+
+```powershell
+.\run.ps1 tunel          # make tunel
+```
+
+O `cloudflared` abre uma conexão **de dentro para fora** e devolve uma URL
+`trycloudflare.com` aleatória. Nenhuma porta é aberta no seu roteador,
+nenhuma conta é necessária, e a URL morre quando você fecha o terminal.
+
+Instale uma vez:
+
+```powershell
+winget install --id Cloudflare.cloudflared
+```
+
+## A trava, e por que ela existe
+
+O alvo **recusa rodar em modo local**. Sem login, publicar aquela URL deixaria
+qualquer pessoa subir documento, e quem tivesse um `doc_id` abriria o
+documento de outra. A recusa é o que impede a pressa de virar vazamento.
+
+Antes de usar o túnel, portanto:
+
+```powershell
+.\run.ps1 usuario -Email voce@exemplo.org -Inquilino "Seu Orgao"
+# ANON_EXIGIR_LOGIN=1 no .env
+.\run.ps1 ui-recarregar
+```
+
+## Administrar acessos pela tela
+
+Quem é `dono` do inquilino vê um botão de engrenagem no topo. Lá dentro:
+
+- **a lista de quem tem acesso**, com papel, último acesso e se a pessoa já
+  trocou a senha do primeiro login;
+- **criar acesso** — e-mail mais papel (`operador` ou `dono`);
+- **nova senha** para alguém, em dois toques no botão (o segundo rótulo diz
+  a consequência: as sessões daquela pessoa caem);
+- **desativar e reativar**.
+
+### Três regras que a tela não pode afrouxar
+
+**Não existe autocadastro.** Ninguém cria a própria conta — o dono cria e
+entrega por fora. A tabela `solicitacao` existe no esquema para o dia em que
+houver convite, e continua sem rota. `tests/test_usuarios.py` percorre
+`app.routes` e falha se alguma rota de cadastro aparecer.
+
+**Quem cria não escolhe a senha.** Ela é sorteada, aparece **uma vez** e vale
+para um login só. Não é comodidade: senha escolhida por quem provisiona é
+fraca e reaproveitada, e — o que decide — faria o administrador saber a senha
+com que a pessoa vai trabalhar. É o que separa *administrar acesso* de *poder
+entrar como a outra pessoa*.
+
+**O dono não alcança outro inquilino, nem cria `plataforma`, nem se
+desativa.** Os três são recusados no servidor, não só escondidos na tela.
+
+> Esconder o botão para quem não é dono é cortesia; a trava é o **403** do
+> servidor. `usuarios.py` decide, `app.py` traduz em código de status.
+
+## Verificado em 2026-11-04
+
+O túnel rápido foi aberto e testado de fora, da internet:
+
+```
+GET /api/saude      -> 200   TLS válido (certificado da Cloudflare)
+GET /               -> 200   a tela de entrada abre
+GET /api/eu         -> 401   exige sessão
+GET /api/doc/<id>   -> 401   protegido
+GET /api/usuarios   -> 401   administração protegida
+```
+
+E o fluxo inteiro de administração, pela URL pública: login do dono → troca
+obrigatória → criar operador → senha de 24 caracteres devolvida uma vez →
+lista mostrando quem tem acesso.
+
+### Atualizar sem derrubar o túnel
+
+`{ps} ui-recarregar` recria **apenas o `ui`**. O `ui-proxy` fica de pé de
+propósito: é ele que segura a porta publicada, e recriá-lo derrubaria um
+túnel apontado para `127.0.0.1:8000` — a URL que você já mandou para alguém.
+
+O proxy resolve `ui` por DNS a cada conexão, então acha o container novo
+sozinho. Só as requisições em voo se perdem. Verificado em 2026-11-04: o
+túnel sobreviveu ao reload e serviu a rota nova em seguida.
+
+A trava de login vale do lado de fora exatamente como vale em `127.0.0.1` —
+que é o que se precisava saber antes de mandar a URL para alguém.
+
+## URL fixa: o túnel nomeado
+
+O túnel rápido sorteia a URL e **ela muda toda vez que você reinicia**. Para
+um endereço estável, no seu domínio, é o túnel **nomeado** — e ele traz junto
+duas coisas que o rápido não tem.
+
+Exige conta na Cloudflare (gratuita) e o DNS do domínio apontado para lá.
+
+```bash
+cloudflared tunnel login                       # abre o navegador, uma vez
+cloudflared tunnel create anonimizador
+cloudflared tunnel route dns anonimizador anonimizador.seudominio.com.br
+```
+
+`~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: anonimizador
+credentials-file: /caminho/para/<id-do-tunel>.json
+ingress:
+  - hostname: anonimizador.seudominio.com.br
+    service: http://127.0.0.1:8000
+    originRequest:
+      # A deteccao de um documento longo passa de um minuto: o padrao
+      # derrubaria a conexao no meio.
+      connectTimeout: 30s
+      noTLSVerify: false
+  - service: http_status:404
+```
+
+```bash
+cloudflared tunnel run anonimizador
+```
+
+### E aqui está o ganho que não é o nome bonito
+
+Com túnel nomeado você pode pôr o **Cloudflare Access** na frente — uma
+trava por e-mail, antes de a requisição sequer chegar à aplicação. Isso
+resolve, sem VPS e sem custo, as duas pendências que o `DEFEITOS.md` D-04
+deixa abertas:
+
+| Pendência do D-04 | Resolvida por |
+|---|---|
+| Sem TLS | certificado da Cloudflare, automático |
+| Sem limite por IP | limite na borda, antes de alcançar o `ui-proxy` |
+
+Some também o problema de o `forward.py` apenas *degradar* sob pressão: o
+tráfego hostil para na borda da Cloudflare e nunca chega à sua máquina.
+
+**Isto torna o túnel nomeado uma alternativa séria ao VPS**, não só um
+atalho de demonstração — para um cliente só, com você hospedando na sua
+infraestrutura. O que ele **não** resolve continua igual: a trilha (Bloco 4)
+e a RN-04, no Passo D7.
+
+## Quando usar cada caminho
+
+| | Túnel rápido | Túnel nomeado | VPS (Parte D) |
+|---|---|---|---|
+| Esforço | minutos | ~1 hora | meio dia |
+| URL | aleatória, some ao fechar | **seu domínio**, fixa | seu domínio, fixa |
+| Sua máquina ligada | sim | sim | não |
+| TLS | sim (Cloudflare) | sim (Cloudflare) | você configura (D6) |
+| Limite por IP | não | **sim**, com Access | você configura (D6) |
+| Serve para | demonstrar, com você por perto | um cliente, você hospedando | vários, independente de você |
+
+Para **apresentar a um cliente**, o túnel costuma ser melhor: a pessoa usa de
+verdade, no navegador dela, e você revoga fechando o terminal. Some também a
+questão da AGPL do Passo D7, porque não há serviço público oferecido a
+terceiros de forma duradoura — mas isso é leitura, não parecer (RN-07).
+
+---
+
+# D. Hospedar num VPS
+
+Escrito em 2026-11-03 para um VPS da Hostinger, mas vale para qualquer
+servidor com Docker.
+
+> **Antes de tudo, o que muda de natureza.** Até aqui o perímetro de
+> segurança era o endereço: a porta sai em `127.0.0.1` e só quem está na
+> máquina alcança. Num VPS isso deixa de valer, e três coisas que eram
+> opcionais passam a ser obrigatórias: **login**, **TLS** e **proxy reverso**.
+> O `HOMOLOGACAO.md` §4 ainda lista "servidor compartilhado na rede" como
+> *não — ainda não*, e os passos abaixo cobrem o que falta do lado técnico.
+> O que eles **não** cobrem está no Passo D7.
+
+## Clonar não basta
+
+A pergunta natural é se basta `git clone`. Não basta, e o motivo é a imagem:
+
+| O que o repositório tem | O que ele **não** tem |
+|---|---|
+| código, compose, migrações, documentação | a imagem Docker (~4 GB) |
+| `.env.example` | o `.env` (ignorado pelo git, com as senhas) |
+| | os modelos de NER, que são **assados na imagem** |
+
+A imagem carrega torch CPU, o spaCy `pt_core_news_lg` e dois checkpoints BERT
+— é o único momento do sistema com rede, e é por isso que o pipeline roda
+offline depois. Construí-la é obrigatório, no VPS ou fora dele.
+
+## O caminho curto: um script
+
+Os passos D2 a D5 estão num script idempotente — rodar duas vezes não
+estraga nada:
+
+```bash
+scp -r anonimizador-poc usuario@vps:~/      # ou git clone no VPS
+ssh usuario@vps
+cd anonimizador-poc && bash provisionar-vps.sh
+```
+
+Ele confere a máquina, instala o Docker, cria o `.env` com senha de banco
+sorteada, constrói a imagem, aplica as migrações, pergunta o primeiro
+usuário, liga o login e sobe tudo com `restart: unless-stopped`. Termina
+rodando a prova de perímetro.
+
+**Ele para antes do D6** — proxy reverso e TLS —, que depende do seu domínio.
+E não abre porta no firewall nem publica em `0.0.0.0`: a porta continua em
+`127.0.0.1`, de propósito.
+
+Os passos abaixo explicam o que o script faz e por quê. Leia-os se algo
+falhar, ou se preferir fazer à mão.
+
+## Passo D1 — Dimensionar a máquina
+
+Números **medidos**, não estimados:
+
+| | |
+|---|---|
+| Imagem construída | ~4 GB |
+| `ui` em repouso | ~1,5 GB de RAM (modelo carregado na subida) |
+| `ui` com documento de 102 páginas | **3,1 GB** |
+| Detecção, 102 páginas | 69–74 s |
+
+Com isso: **8 GB de RAM e 2 vCPU** é o mínimo confortável, e **40 GB de
+disco** depois da imagem. Com 4 GB a máquina sobrevive a documento pequeno e
+morre por OOM num grande — e o modo de falha é o container reiniciando no
+meio de uma revisão.
+
+## Passo D2 — Instalar o Docker no VPS
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER   # saia e entre de novo para valer
+docker compose version
+```
+
+## Passo D3 — Levar o código e a imagem
+
+```bash
+git clone https://github.com/lucaasmeiraf/anonimizador.git
+cd anonimizador/anonimizador-poc
+```
+
+E então **construir**:
+
+```bash
+docker compose build        # única etapa com rede; demora
+```
+
+> **Se o VPS for de 1 ou 2 vCPU, construa na sua máquina e transporte.**
+> Compilar e baixar tudo num VPS fraco leva muito tempo e pode estourar o
+> disco durante a build. O caminho já está no Passo 14:
+>
+> ```bash
+> # na sua máquina
+> docker compose build
+> docker save anonimizador-poc:fase0 | gzip > anonimizador.tar.gz
+> scp anonimizador.tar.gz usuario@vps:~
+>
+> # no VPS
+> gunzip -c anonimizador.tar.gz | docker load
+> ```
+
+## Passo D4 — Criar o `.env`
+
+Ele **não** vem no clone, de propósito: carrega senhas.
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Mínimo para um VPS:
+
+```
+POSTGRES_PASSWORD=<senha longa e aleatória>
+ANON_EXIGIR_LOGIN=1
+```
+
+`ANON_EXIGIR_LOGIN=1` é o que faz toda rota de documento exigir sessão. Sem
+ele o sistema sobe em modo local — **aberto** — e a porta estaria publicada.
+
+## Passo D5 — Banco, usuário e subida
+
+Na ordem, e a ordem importa: criar o usuário **antes** de exigir login, ou
+você se tranca do lado de fora.
+
+```bash
+docker compose up -d postgres
+docker compose run --rm cli-db upgrade head
+
+# a senha aparece UMA vez; anote
+make usuario EMAIL=voce@exemplo.org INQUILINO="Seu Orgao"
+
+docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d ui ui-proxy
+```
+
+A sobreposição `docker-compose.vps.yml` acrescenta `restart: unless-stopped`
+aos serviços de longa duração. Sem ela, **um reboot do VPS derruba o sistema
+e ele não volta** — o compose principal não tem política de restart nenhuma,
+porque em máquina de desenvolvimento isso seria intrometido.
+
+Confirme o modo:
+
+```bash
+docker compose exec -T ui python -m anonimizador.web.modo
+#   modo: COM LOGIN  (ANON_EXIGIR_LOGIN=1)
+```
+
+## Passo D6 — Proxy reverso e TLS, no host
+
+**A porta continua em `127.0.0.1:8000`.** Não a exponha em `0.0.0.0`: seria
+pôr a aplicação na internet sem TLS e sem limite por IP.
+
+Quem fica de frente é um proxy reverso **no host** — não um container. Assim
+o perímetro do compose fica intacto: continuam existindo exatamente dois
+componentes com saída de rede (invariante 6), e o terminador de TLS é
+infraestrutura do host.
+
+Com Caddy, que resolve o certificado sozinho:
+
+```bash
+sudo apt install -y caddy
+```
+
+`/etc/caddy/Caddyfile`:
+
+```
+anonimizador.seudominio.com.br {
+    # Limite por IP: e o que o `forward.py` NAO faz, e esta dito em D-04.
+    rate_limit {
+        zone entrada {
+            key    {remote_host}
+            events 60
+            window 1m
+        }
+    }
+
+    # O upload e grande; o padrao do Caddy nao e.
+    request_body {
+        max_size 55MB
+    }
+
+    reverse_proxy 127.0.0.1:8000 {
+        # A deteccao de um documento longo leva mais de um minuto.
+        transport http {
+            response_header_timeout 300s
+            read_timeout 300s
+        }
+    }
+}
+```
+
+```bash
+sudo systemctl reload caddy
+```
+
+E feche tudo menos SSH e HTTPS:
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 443/tcp
+sudo ufw enable
+```
+
+> O `rate_limit` do Caddy exige um build com o módulo correspondente. Se o
+> seu não tiver, use nginx com `limit_req`, ou aceite que o limite por IP não
+> existe — e então leia D-04 outra vez antes de deixar a URL pública.
+
+## Passo D7 — Confirmar o perímetro no VPS
+
+As provas valem no servidor como valem na sua máquina, e é lá que importa:
+
+```bash
+docker compose exec -T ui python -m anonimizador.web.prova_rede
+# APROVADO — nenhum caminho de saída, subprocesso incluído.
+```
+
+## O que isto **não** resolve
+
+Dito aqui porque hospedar não transforma o sistema em produto:
+
+1. **Posse por documento não existe.** Com login, qualquer usuário
+   autenticado alcança qualquer `doc_id`. É o Bloco 3 da Fase 4
+   (`sessao_dono`), e sem ele não coloque dois clientes no mesmo servidor.
+2. **Não há trilha.** Quem subiu, aprovou e baixou o quê não fica registrado
+   (Bloco 4).
+3. **Sem backup do `pgdata`** e sem rotina de atualização.
+4. **O original em claro vive no disco do VPS** durante a revisão, em
+   `./out`, com TTL e varredura de órfãs. Num VPS, "o disco" é de outra
+   pessoa — avalie criptografia de disco com quem contratou.
+5. **RN-04, e aqui ela muda de forma.** O PyMuPDF é AGPL-3.0. Enquanto o uso
+   era interno, a pendência era sobre *distribuir*. Oferecer o sistema como
+   serviço acessível pela rede é o caso que a cláusula de uso em rede da AGPL
+   existe para alcançar, e a leitura corrente é que ela obriga a oferecer o
+   código correspondente a quem usa o serviço. **Isto é leitura de memória,
+   não parecer** — RN-07 — e precisa de confirmação de quem assina
+   juridicamente **antes** de a URL ficar pública para terceiros. Para
+   demonstração sua, com documento sintético, a conversa é outra.
+
+---
+
 # O que ainda não é produto
 
 Sendo direto: **o que existe hoje é um pipeline de linha de comando validado

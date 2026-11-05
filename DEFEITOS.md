@@ -58,6 +58,16 @@ morrer — não imunidade. Limite por IP é o que falta, e ele não mora aqui.
 3. **Sem TLS.** Hoje é HTTP em `127.0.0.1`, que é seguro justamente por não
    sair da máquina.
 
+### Um caminho que resolve 1 e 3 sem VPS
+
+Medido em 2026-11-04: um **túnel nomeado da Cloudflare com Access** na frente
+entrega TLS e limite por IP **na borda**, antes de a requisição alcançar o
+`ui-proxy`. O tráfego hostil para lá e nunca chega à máquina, o que é melhor
+que o teto de conexões conseguir — ele degrada previsivelmente, não defende.
+
+Fica aberto o item 2 (cabeçalhos de segurança) e, no fim das contas, a
+decisão de hospedagem. Ver `docs/04-implantacao.md`, Parte C2.
+
 ### Onde isso se resolve
 
 Limite por IP, timeout de requisição, tamanho de corpo e TLS são trabalho de

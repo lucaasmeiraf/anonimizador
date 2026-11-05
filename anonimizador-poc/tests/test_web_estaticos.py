@@ -624,3 +624,46 @@ def test_os_avisos_incondicionais_sairam_e_os_condicionais_ficaram():
     assert "não há refluxo" not in js
     assert "assinatura digital será invalidada" in js
     assert 'classList.toggle("hidden", ul.children.length === 0)' in js
+
+
+# --------------------------------------------------------------------------
+# Configurações / administração de acessos
+# --------------------------------------------------------------------------
+def test_a_tela_de_configuracoes_existe():
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    assert 'id="tela-config"' in html
+    assert 'id="form-novo-usuario"' in html
+    assert 'id="lista-usuarios"' in html
+
+
+def test_o_botao_de_configuracoes_so_aparece_para_dono():
+    """Esconder não é a trava — o servidor responde 403 —, mas oferecer o que
+    a pessoa não pode fazer é desenho ruim."""
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert 'eu.papel !== "dono"' in js, (
+        "o botão de configurações deixou de depender do papel"
+    )
+
+
+def test_a_tela_avisa_que_a_senha_nao_volta():
+    """A senha temporária existe uma vez. Quem não copiar precisa redefinir,
+    e redefinir derruba as sessões da pessoa — então o aviso precisa estar na
+    frente, não no rodapé."""
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    bloco = html[html.index('id="senha-gerada"') : html.index('id="config-fechar"')]
+    assert "não aparece de novo" in bloco
+    assert "um login só" in bloco
+
+
+def test_a_tela_nao_oferece_campo_de_senha_ao_criar():
+    """Quem cria não escolhe a senha, e isso é regra, não comodidade.
+
+    Senha escolhida por quem provisiona é fraca e reaproveitada — e, pior,
+    faria o administrador saber a senha com que a pessoa vai trabalhar. A
+    sorteada vale para um login só.
+    """
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    bloco = html[html.index('id="form-novo-usuario"') : html.index('id="config-erro"')]
+    assert 'type="password"' not in bloco, (
+        "apareceu campo de senha no formulário de criação"
+    )

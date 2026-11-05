@@ -51,6 +51,13 @@
   <ol id="etapas" class="etapas" aria-label="Etapas"></ol>
 
   <div id="topo-acoes" class="topo-acoes">
+    <button id="btn-config" class="icone-botao hidden" aria-label="Configurações"
+            title="Configurações" aria-haspopup="dialog" aria-controls="tela-config">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/>
+      </svg>
+    </button>
     <button id="btn-sair" class="icone-botao hidden" aria-label="Sair da conta"
             title="Sair">Sair</button>
     <button id="btn-atalhos" class="icone-botao" aria-label="Ajuda e atalhos de teclado"
@@ -674,7 +681,67 @@
     </div>
   </aside>
 
-  <!-- Conclusão -->
+  <!-- Configurações. Só o dono do inquilino vê o botão que abre isto; o
+     servidor recusa de qualquer forma (403), que é onde a regra mora. -->
+<div id="config-fundo" class="modal-fundo hidden">
+  <div id="tela-config" class="modal modal-largo" role="dialog" aria-modal="true"
+       aria-labelledby="config-titulo">
+    <h3 id="config-titulo">Configurações</h3>
+
+    <section class="secao">
+      <h4 class="rotulo-grupo">Pessoas com acesso</h4>
+      <p class="ajuda">
+        Não há cadastro automático: você cria a conta e entrega a senha
+        temporária por fora. No primeiro acesso a pessoa escolhe a dela.
+      </p>
+      <ul id="lista-usuarios" class="lista-usuarios"></ul>
+    </section>
+
+    <section class="secao">
+      <h4 class="rotulo-grupo">Criar acesso</h4>
+      <form id="form-novo-usuario" class="linha-form" autocomplete="off">
+        <label class="campo campo-cresce">
+          <span>E-mail</span>
+          <span class="campo-busca">
+            <input id="novo-email" type="email" required
+                   autocapitalize="none" spellcheck="false"
+                   placeholder="pessoa@orgao.gov.br">
+          </span>
+        </label>
+        <label class="campo">
+          <span>Papel</span>
+          <span class="campo-busca">
+            <select id="novo-papel">
+              <option value="operador">Operador — anonimiza documentos</option>
+              <option value="dono">Dono — também administra acessos</option>
+            </select>
+          </span>
+        </label>
+        <button id="btn-criar-usuario" type="submit" class="primario">Criar</button>
+      </form>
+      <p id="config-erro" class="aviso-entrada hidden" role="alert"></p>
+
+      <!-- A senha aparece UMA vez. Não é guardada em claro em lugar nenhum:
+           no banco só existe o hash. -->
+      <div id="senha-gerada" class="senha-gerada hidden">
+        <strong>Acesso criado. Anote a senha agora — ela não aparece de novo.</strong>
+        <div class="senha-caixa">
+          <code id="senha-valor"></code>
+          <button id="btn-copiar-senha" type="button" class="secundario pequeno">Copiar</button>
+        </div>
+        <span class="auxiliar">
+          Vale para um login só: no primeiro acesso a pessoa troca por uma dela.
+        </span>
+      </div>
+    </section>
+
+    <div class="modal-acoes">
+      <button id="config-fechar" class="secundario">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Conclusão -->
   <section id="tela-sucesso" class="sucesso-fundo hidden" role="dialog"
            aria-modal="true" aria-labelledby="sucesso-titulo">
     <div class="sucesso">

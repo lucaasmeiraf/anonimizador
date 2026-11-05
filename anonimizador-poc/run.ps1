@@ -5,7 +5,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet('build','test','test-all','corpus','eval','eval-fast','diagnostico','gate-usabilidade','gate-usabilidade-apurar','ui','ui-recarregar','ui-down','ui-proof','ui-llm','llm-proof','offline-proof',
-                 'demo','shell','usuario','gpu-build','gpu-eval','clean','help')]
+                 'demo','shell','usuario','tunel','gpu-build','gpu-eval','clean','help')]
     [string]$Target = 'help',
 
     # Para o alvo `usuario`.
@@ -74,7 +74,14 @@ switch ($Target) {
         #   .env / docker-compose.yml  -> `up -d` ja recria
         #   codigo Python              -> precisa recriar (uvicorn sem reload)
         #   CSS / JS / HTML            -> nada; basta recarregar a pagina
-        docker compose up -d --force-recreate ui ui-proxy
+        #
+        # Recria APENAS o `ui`. O `ui-proxy` fica de pe: e ele que segura a
+        # porta publicada, e recria-lo derrubaria um tunel do cloudflared
+        # apontado para 127.0.0.1:8000 — a URL que voce ja mandou para
+        # alguem. O proxy resolve `ui` por DNS a cada conexao, entao acha o
+        # container novo sozinho.
+        docker compose up -d ui-proxy
+        docker compose up -d --force-recreate ui
         Write-Host 'aguardando a UI subir...'
         $ok = $false
         foreach ($i in 1..90) {
@@ -133,6 +140,51 @@ switch ($Target) {
             --out /app/out/contrato-000.redigido.pdf
     }
     'shell'         { docker compose run --rm dev }
+    'tunel'         {
+        # Expoe a UI para a internet por um tunel temporario do Cloudflare,
+        # para demonstrar o sistema a alguem fora da sua rede.
+        #
+        # Nenhuma porta e aberta no roteador e nenhuma conta e necessaria: o
+        # `cloudflared` abre uma conexao DE DENTRO para fora e devolve uma URL
+        # `trycloudflare.com` aleatoria, que morre quando voce fecha.
+        #
+        # A TRAVA ABAIXO NAO E CERIMONIA. Sem login, publicar esta URL poria o
+        # sistema inteiro aberto: qualquer um sobe documento, e quem tiver um
+        # `doc_id` abre o documento de outra pessoa. O alvo recusa rodar nesse
+        # estado, de proposito — e a recusa e o unico jeito de a pressa nao
+        # virar vazamento.
+        $saude = $null
+        try { $saude = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/saude' -TimeoutSec 3 } catch {}
+        if (-not $saude) {
+            Write-Host ''
+            Write-Host '  a UI nao esta no ar. Suba com:   ui'
+            Write-Host ''
+            exit 1
+        }
+
+        # A decisao mora em `web/modo.py`, nao aqui: um `grep` por frase
+        # escrito duas vezes (Makefile e este arquivo) e duas chances de a
+        # trava abrir por engano. `--exigir-login` sai 0 com login, 1 sem, e
+        # imprime o motivo. `tests/test_modo.py` cobre os dois lados.
+        docker compose exec -T ui python -m anonimizador.web.modo --exigir-login
+        if ($LASTEXITCODE -ne 0) { exit 1 }
+
+        if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
+            Write-Host ''
+            Write-Host '  cloudflared nao encontrado. Instale com:'
+            Write-Host '    winget install --id Cloudflare.cloudflared'
+            Write-Host ''
+            exit 1
+        }
+
+        Write-Host ''
+        Write-Host '  Tunel temporario. A URL aparece abaixo, em poucos segundos.'
+        Write-Host '  Ela morre quando voce fechar este terminal (Ctrl+C).'
+        Write-Host ''
+        Write-Host '  Lembre-se: quem receber a URL precisa de uma conta para entrar.'
+        Write-Host ''
+        cloudflared tunnel --url http://127.0.0.1:8000
+    }
     'usuario'       {
         if (-not $Email -or -not $Inquilino) {
             Write-Host ''
@@ -179,6 +231,7 @@ switch ($Target) {
         Write-Host '  demo           redige um documento do corpus'
         Write-Host '  shell          shell interativo no container'
         Write-Host '  usuario        cria usuario para o modo com login'
+        Write-Host '  tunel          expoe a UI por um tunel temporario, para demonstrar'
         Write-Host '                   .\run.ps1 usuario -Email voce@ex.org -Inquilino "Seu Orgao"'
         Write-Host '  gpu-build      constroi a imagem com torch CUDA'
         Write-Host '  gpu-eval       avaliacao usando GPU'

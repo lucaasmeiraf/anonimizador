@@ -28,8 +28,9 @@ from pydantic import BaseModel, Field
 from .. import config, db
 from ..pipeline import DetectionPipeline
 from ..pdf_redactor import PseudonimoImpossivelNoPDF
+from ..db.modelos import PLATAFORMA
 from ..politica import PerfilPolitica, PoliticaInvalida
-from . import auth
+from . import auth, posse, usuarios
 from .sessao import (
     DocumentoIlegivel,
     PdfProtegido,
@@ -296,6 +297,90 @@ def eu(request: Request) -> dict:
         }
 
 
+# --------------------------------------------------------------------------
+# Administração de usuários — Bloco 2b, pela tela
+# --------------------------------------------------------------------------
+# Só o `dono` do inquilino alcança estas rotas, e só sobre gente do inquilino
+# dele. As regras moram em `usuarios.py`; aqui é transporte e código de
+# status, como no resto de `app.py`.
+#
+# **Não existe rota de autocadastro**, e a ausência é a funcionalidade:
+# `tests/test_usuarios.py` falha se alguma aparecer.
+class NovoUsuario(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    papel: str = "operador"
+
+
+class AtivoDoUsuario(BaseModel):
+    ativo: bool
+
+
+def _traduzir(exc: Exception) -> HTTPException:
+    """403 para falta de papel, 422 para dado ruim. Nunca 500."""
+    if isinstance(exc, usuarios.NaoAutorizado):
+        return HTTPException(403, str(exc))
+    return HTTPException(422, str(exc))
+
+
+@app.get("/api/usuarios")
+def listar_usuarios(usuario=Depends(usuario_atual)) -> dict:
+    if usuario is None:
+        raise HTTPException(409, "este servidor roda em modo local, sem login")
+    try:
+        with db.sessao() as s:
+            return {"usuarios": usuarios.listar(s, s.get(type(usuario), usuario.id))}
+    except (usuarios.NaoAutorizado, usuarios.DadosInvalidos) as exc:
+        raise _traduzir(exc) from exc
+
+
+@app.post("/api/usuarios", dependencies=[Depends(conferir_csrf)])
+def criar_usuario(corpo: NovoUsuario, usuario=Depends(usuario_atual)) -> dict:
+    """Cria e devolve a senha temporária — **a única vez que ela existe**.
+
+    Ela não é guardada em claro em lugar nenhum: no banco só há o hash. Quem
+    chamou precisa mostrá-la na hora, e a tela avisa que ela não volta.
+    """
+    if usuario is None:
+        raise HTTPException(409, "este servidor roda em modo local, sem login")
+    try:
+        with db.sessao() as s:
+            novo_id, senha = usuarios.criar(
+                s, s.get(type(usuario), usuario.id), corpo.email, corpo.papel
+            )
+    except (usuarios.NaoAutorizado, usuarios.DadosInvalidos) as exc:
+        raise _traduzir(exc) from exc
+    return {"id": novo_id, "email": corpo.email.strip().lower(), "senha": senha}
+
+
+@app.post("/api/usuarios/{usuario_id}/senha", dependencies=[Depends(conferir_csrf)])
+def redefinir_senha_de(usuario_id: str, usuario=Depends(usuario_atual)) -> dict:
+    if usuario is None:
+        raise HTTPException(409, "este servidor roda em modo local, sem login")
+    try:
+        with db.sessao() as s:
+            senha = usuarios.redefinir_senha(
+                s, s.get(type(usuario), usuario.id), usuario_id
+            )
+    except (usuarios.NaoAutorizado, usuarios.DadosInvalidos) as exc:
+        raise _traduzir(exc) from exc
+    return {"senha": senha}
+
+
+@app.patch("/api/usuarios/{usuario_id}", dependencies=[Depends(conferir_csrf)])
+def alternar_usuario(
+    usuario_id: str, corpo: AtivoDoUsuario, usuario=Depends(usuario_atual)
+) -> dict:
+    if usuario is None:
+        raise HTTPException(409, "este servidor roda em modo local, sem login")
+    try:
+        with db.sessao() as s:
+            return usuarios.alternar_ativo(
+                s, s.get(type(usuario), usuario.id), usuario_id, corpo.ativo
+            )
+    except (usuarios.NaoAutorizado, usuarios.DadosInvalidos) as exc:
+        raise _traduzir(exc) from exc
+
+
 @app.post("/api/logout", dependencies=[Depends(conferir_csrf)])
 def logout(request: Request, resposta: Response) -> dict:
     """Apaga a linha da sessão, não só o cookie. Ver `auth.fechar_sessao`."""
@@ -336,15 +421,24 @@ def pegar_sessao(doc_id: str, usuario=Depends(usuario_atual)) -> Sessao:
     de documento não passar por esta função, então proteger o gargalo protege
     todas, inclusive a que alguém acrescentar depois.
 
-    `usuario` não é usado no corpo de propósito. Ele está na assinatura para
-    que a dependência rode — e `usuario_atual` levanta 401 antes de chegarmos
-    a procurar a sessão. A posse por documento, que usa este objeto, é o
-    Bloco 3 (`sessao_dono`).
+    Duas perguntas, nesta ordem: **quem é você** (`usuario_atual`, que levanta
+    401 sem sessão) e **este documento é seu** (`posse.alcanca`, Bloco 3).
+
+    A segunda responde **404, nunca 403**. O 403 diria "existe, mas não é
+    seu", que é informação a mais do que o chamador precisa — confirmar que um
+    processo existe neste servidor já diz algo sobre quem é cliente de quem.
+    Por isso a recusa por posse é indistinguível de documento inexistente.
     """
     sessoes.expirar()
     s = sessoes.obter(doc_id)
     if s is None:
         raise HTTPException(404, "sessão inexistente ou expirada")
+
+    if usuario is not None:
+        with db.sessao() as bd:
+            if not posse.alcanca(bd, doc_id, usuario):
+                logger.warning("acesso negado ao documento por falta de posse")
+                raise HTTPException(404, "sessão inexistente ou expirada")
     return s
 
 
@@ -363,6 +457,22 @@ def criar_doc(
     # medido em 2026-09-24: `/api/saude` ficou 60 s sem resposta, e a tela de
     # qualquer outra pessoa congelaria junto. Como `def`, o FastAPI a leva ao
     # pool de threads. `tests/test_envio_nao_trava.py` trava isto.
+    if usuario is not None and usuario.papel == PLATAFORMA:
+        # `plataforma` administra: cria inquilino, aprova cadastro. Nao abre
+        # documento, e e decisao de seguranca — um super-usuario que atravessa
+        # inquilinos E le documento e porta dos fundos por desenho
+        # (`goal-fase-4.md` §3).
+        #
+        # 403 e nao 404 aqui porque a pessoa conhece o proprio papel: nao ha o
+        # que esconder, e "nao existe" seria confuso num caminho de criacao.
+        # Para LER documento alheio o codigo continua sendo 404.
+        #
+        # `posse.registrar` tambem recusa, e continua recusando: aquela e a
+        # trava contra defeito de rota, esta e a resposta ao usuario.
+        raise HTTPException(
+            403, "o papel plataforma administra o sistema e não abre documento"
+        )
+
     dados = arquivo.file.read()
     if not dados:
         raise HTTPException(400, "arquivo vazio")
@@ -381,6 +491,15 @@ def criar_doc(
         ) from exc
     except DocumentoIlegivel as exc:
         raise HTTPException(422, "não foi possível ler este arquivo como PDF") from exc
+
+    if usuario is not None:
+        # A posse nasce junto com o documento. Gravar depois de detectar
+        # deixaria uma janela — de dezenas de segundos num documento longo —
+        # em que o documento existe e não é de ninguém, e nela o
+        # `pegar_sessao` recusaria até para quem acabou de enviar.
+        with db.sessao() as bd:
+            posse.registrar(bd, sessao.doc_id, usuario)
+
     sessao.perfil = perfil_padrao()
 
     if not sessao.tm.text.strip():
@@ -388,6 +507,9 @@ def criar_doc(
         # faz OCR, e uma tela vazia sem explicação faria o usuário concluir
         # que o documento está limpo.
         sessoes.remover(sessao.doc_id)
+        if usuario is not None:
+            with db.sessao() as bd:
+                posse.esquecer(bd, sessao.doc_id)
         raise HTTPException(
             422,
             "nenhum texto extraível: provavelmente um PDF escaneado. "
@@ -423,6 +545,9 @@ def apagar_doc(sessao: Sessao = Depends(pegar_sessao)) -> dict:
     # ficar de fora dela. `test_posse_rotas.py` trava isto.
     if not sessoes.remover(sessao.doc_id):
         raise HTTPException(404, "sessão inexistente")
+    if EXIGIR_LOGIN:
+        with db.sessao() as bd:
+            posse.esquecer(bd, sessao.doc_id)
     return {"removida": True}
 
 

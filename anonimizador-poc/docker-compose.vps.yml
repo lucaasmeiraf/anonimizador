@@ -1,0 +1,45 @@
+# Sobreposicao para VPS. Use JUNTO com o compose principal:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d ui ui-proxy
+#
+# O que ela faz, e tudo o que ela faz: os servicos de longa duracao voltam
+# sozinhos. Sem isto, um reboot do VPS derruba o sistema e ele so volta com
+# alguem entrando por SSH — o compose principal nao tem politica de restart
+# nenhuma, porque em maquina de desenvolvimento isso seria intrometido.
+#
+# O QUE ELA DELIBERADAMENTE NAO FAZ: mudar a porta publicada.
+#
+# O `ui-proxy` continua em `127.0.0.1:8000`, e isso nao e descuido. Expor
+# `0.0.0.0:8000` poria a aplicacao na internet sem TLS e sem limite por IP —
+# e o D-04 do DEFEITOS.md e explicito sobre o segundo: com teto de 64 conexoes
+# e 15 s de espera, quem sustentar ~4 conexoes por segundo mantem o teto
+# cheio. O encaminhador degrada previsivelmente; ele nao se defende.
+#
+# Quem fica de frente para a internet e um proxy reverso NO HOST (Caddy ou
+# nginx), encaminhando 443 -> 127.0.0.1:8000. Tres motivos:
+#
+#   1. TLS: senha de login em HTTP claro e capturavel por quem esta no
+#      caminho, e o cookie de sessao junto.
+#   2. Limite por IP, timeout de requisicao e teto de corpo, que e onde essa
+#      defesa pertence.
+#   3. O perimetro do compose fica intacto: continuam existindo exatamente
+#      dois componentes com saida de rede (invariante 6 do CLAUDE.md), e o
+#      terminador de TLS e infraestrutura do host, nao um terceiro servico
+#      dentro da composicao.
+#
+# Ver `docs/04-implantacao.md`, Parte D.
+
+services:
+  postgres:
+    restart: unless-stopped
+
+  ui:
+    restart: unless-stopped
+
+  ui-proxy:
+    restart: unless-stopped
+
+  # Só sobe se você usar a análise por IA externa. Incluido aqui para que o
+  # `restart` valha tambem quando ele fizer parte do conjunto.
+  analise:
+    restart: unless-stopped

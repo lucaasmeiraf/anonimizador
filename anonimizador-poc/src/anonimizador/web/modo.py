@@ -42,7 +42,50 @@ def descrever() -> list[str]:
     return linhas
 
 
-def main() -> int:
+def exigir_login() -> tuple[bool, list[str]]:
+    """O sistema está em modo com login? Devolve também o que dizer se não.
+
+    Existe para que a decisão de "pode expor esta porta?" seja **uma**, em
+    Python e testada, e não duas em shell. Até 2026-11-04 ela estava escrita
+    duas vezes — uma no `Makefile`, outra no `run.ps1` — como um `grep` pela
+    string "COM LOGIN" na saída deste módulo. Um `grep` que casa por engano
+    abre o sistema para a internet; um que deixa de casar quando o texto muda
+    só irrita. Os dois erros são evitáveis com uma função.
+    """
+    if EXIGIR_LOGIN_ATIVO():
+        return True, []
+    return False, [
+        "  RECUSADO: o sistema está em modo LOCAL, sem login.",
+        "",
+        "  Publicar esta URL deixaria qualquer pessoa subir documento, e quem",
+        "  tivesse um doc_id abriria o documento de outra. Antes:",
+        "",
+        "    1. crie um usuário   (make usuario / run.ps1 usuario)",
+        "    2. ANON_EXIGIR_LOGIN=1 no .env",
+        "    3. recarregue        (make ui-recarregar)",
+    ]
+
+
+def EXIGIR_LOGIN_ATIVO() -> bool:
+    """Lido de `app` para não haver duas fontes da mesma verdade."""
+    return bool(app_mod.EXIGIR_LOGIN)
+
+
+def main(argv: list[str] | None = None) -> int:
+    import sys
+
+    argv = sys.argv[1:] if argv is None else argv
+
+    # `--exigir-login`: não imprime o estado, **decide**. Código de saída 0
+    # quando há login; 1 quando não há, com o motivo no stderr. É o que o
+    # alvo `tunel` consulta, nos dois sistemas de build.
+    if "--exigir-login" in argv:
+        ok, recado = exigir_login()
+        if not ok:
+            for linha in recado:
+                print(linha, file=sys.stderr)
+        return 0 if ok else 1
+
     for linha in descrever():
         print(linha)
     return 0

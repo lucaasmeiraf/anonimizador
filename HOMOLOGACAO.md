@@ -113,7 +113,7 @@ Nestas condições, e só nelas:
 
 | Cenário | O que bloqueia |
 |---|---|
-| Servidor compartilhado na rede (KVM, VM do cliente acessada por várias pessoas) | sem login, sem TLS, sem posse de documento — Fase 4, Blocos 2 e 3 |
+| Servidor compartilhado na rede (KVM, VM do cliente acessada por várias pessoas) | **falta só TLS** — login (Bloco 2) e posse por documento (Bloco 3) entregues em 2026-11-03/04; a trilha (Bloco 4) continua aberta |
 | Documento real enviado à IA externa | retenção no OpenRouter (item 2) e parecer jurídico sobre o texto com código (item 3) |
 | Instalar no ambiente do cliente sem consultar o jurídico | **leitura a confirmar com quem assina:** entregar a instalação a terceiro, mesmo para homologar, pode já contar como distribuição e disparar a AGPL do PyMuPDF (RN-04) |
 | Entrega comercial | RN-04 e RN-05 |

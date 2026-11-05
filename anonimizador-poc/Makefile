@@ -34,6 +34,7 @@ help:
 	@echo "  gpu-eval       avaliacao usando GPU"
 	@echo "  ui-recarregar  recarrega a UI depois de qualquer alteracao"
 	@echo "  usuario        cria usuario para o modo com login"
+	@echo "  tunel          expoe a UI por um tunel temporario, para demonstrar"
 	@echo "  clean          remove saidas geradas"
 	@echo ""
 
@@ -101,12 +102,32 @@ usuario:
 #                                basta recarregar a pagina
 #
 # Na duvida, rode isto. O custo e os ~30 s do modelo carregando.
+#
+# Recria APENAS o `ui`. O `ui-proxy` fica de pe de proposito: e ele que
+# segura a porta publicada, e recria-lo derrubaria um tunel do cloudflared
+# apontado para 127.0.0.1:8000 — a URL que voce ja mandou para alguem.
+# O proxy resolve `ui` por DNS a cada conexao, entao o container novo e
+# encontrado sozinho; so as requisicoes em voo se perdem.
 ui-recarregar:
-	$(COMPOSE) up -d --force-recreate ui ui-proxy
+	$(COMPOSE) up -d ui-proxy
+	$(COMPOSE) up -d --force-recreate ui
 	@echo "aguardando a UI subir..."
 	@for i in $$(seq 1 90); do curl -sf -m 3 http://127.0.0.1:8000/api/saude >/dev/null && break || sleep 2; done
 	@echo ""
 	@$(COMPOSE) exec -T ui python -m anonimizador.web.modo
+
+# Expoe a UI por um tunel temporario do Cloudflare, para demonstrar o sistema
+# a alguem fora da sua rede. Nenhuma porta aberta no roteador, nenhuma conta:
+# o `cloudflared` conecta de dentro para fora e devolve uma URL aleatoria que
+# morre quando voce fecha.
+#
+# A TRAVA NAO E CERIMONIA: sem login, publicar a URL deixa qualquer um subir
+# documento e qualquer um com um doc_id abrir o documento de outra pessoa.
+tunel:
+	@curl -sf -m 3 http://127.0.0.1:8000/api/saude >/dev/null || { echo "  a UI nao esta no ar. Suba com: make ui"; exit 1; }
+	@$(COMPOSE) exec -T ui python -m anonimizador.web.modo --exigir-login
+	@command -v cloudflared >/dev/null || { echo "  cloudflared nao encontrado: https://github.com/cloudflare/cloudflared"; exit 1; }
+	cloudflared tunnel --url http://127.0.0.1:8000
 
 ui-down:
 	$(COMPOSE) down --remove-orphans

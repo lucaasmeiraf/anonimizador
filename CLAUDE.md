@@ -144,6 +144,8 @@ errada é a principal forma de introduzir bug aqui.
 | Verificação | `verifier.py` | 10 vetores no PDF (11 com token), 2 no texto | qualquer confiança no redator |
 | Política | `politica.py` | operador por entidade, validação | execução |
 | Identidade | `web/auth.py` | hash de senha, sessão de login, limite de tentativa | HTTP, cookie, código de status |
+| Posse | `web/posse.py` | de quem é cada documento, por inquilino | HTTP, conteúdo de documento |
+| Administração | `web/usuarios.py` | criar, redefinir e desativar acesso no inquilino | HTTP, autocadastro |
 | Estado + travas | `web/sessao.py` | **todas** as regras da UI | transporte |
 | Transporte | `web/app.py` | HTTP, códigos de status | regra de decisão |
 | Egress | `web/analise.py` | falar com o OpenRouter | documento, detecção, disco |
@@ -328,6 +330,8 @@ anonimizador-poc/
   src/anonimizador/                pipeline, reconhecedores, redator, verificador
     web/                           API, sessão, estáticos, prova de rede
   eval/                            corpus sintético, avaliação, diagnóstico
+  docker-compose.vps.yml           sobreposicao para VPS: restart automatico
+  provisionar-vps.sh               provisiona um VPS do zero (docs/04, Parte D)
   docs/01..07                      inventário, requisitos, configuração,
                                    implantação, política de LLM, resultados F0,
                                    modelo de produto (planos PF e empresa)

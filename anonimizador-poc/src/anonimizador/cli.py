@@ -353,14 +353,13 @@ def cmd_criar_usuario(args) -> int:
     autoatendimento, a credencial é entregue por fora e o primeiro acesso
     obriga a troca.
     """
-    import secrets
-
     from . import db
     from .db.modelos import Identidade, Inquilino, Usuario
-    from .web import auth
+    from .web import auth, usuarios
 
     db.iniciar()
-    senha = secrets.token_urlsafe(18)
+    # Mesma receita da tela: uma funcao, nao duas que podem divergir.
+    senha = usuarios.nova_senha()
     with db.sessao() as s:
         inquilino = (
             s.query(Inquilino).filter(Inquilino.nome == args.inquilino).one_or_none()
