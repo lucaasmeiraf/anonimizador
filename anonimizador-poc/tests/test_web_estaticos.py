@@ -667,3 +667,49 @@ def test_a_tela_nao_oferece_campo_de_senha_ao_criar():
     assert 'type="password"' not in bloco, (
         "apareceu campo de senha no formulário de criação"
     )
+
+
+def test_os_dois_caminhos_de_entrada_montam_o_topo_igual():
+    """Recarregar com sessão e entrar pelo formulário levam ao mesmo topo.
+
+    Defeito relatado em 2026-11-05: a engrenagem só aparecia em quem
+    recarregava a página já logado. Quem entrava pelo formulário via o botão
+    "Sair" e mais nada — a tela de configurações existia e era inalcançável.
+
+    A causa foi duplicação: as linhas que revelam os botões estavam escritas
+    só num dos dois caminhos. Este teste exige que exista **uma** função e
+    que os dois caminhos a chamem.
+    """
+    js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
+    assert js.count("function mostrarAcoesDeConta") == 1
+    assert js.count("mostrarAcoesDeConta(") == 3, (
+        "esperado: a definição mais as duas chamadas (abrir e login)"
+    )
+    # E ninguém revela o botão por fora dela.
+    assert js.count('$("btn-config").classList.toggle') == 1
+
+
+def test_modal_que_abre_de_qualquer_tela_fica_fora_do_main():
+    """Pai oculto esconde o filho, e `<main id="tela-revisao">` nasce `hidden`.
+
+    Defeito relatado em 2026-11-05: o modal de configurações foi escrito
+    dentro do `<main>`. O botão aparecia, o clique chamava a função, o
+    `hidden` do modal saía — e **nada acontecia**, porque o `<main>` acima
+    dele continuava oculto enquanto não houvesse documento aberto.
+
+    O sintoma é cruel: nenhum erro no console, nenhum teste de API falha, e o
+    código do modal está correto. Só a posição no DOM está errada.
+
+    A regra: modal que pode abrir **antes** de haver documento mora fora do
+    `<main>`. `#tela-sucesso` é a exceção legítima — ela só existe depois da
+    aprovação, com a tela de revisão à vista.
+    """
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    fim_main = html.index("</main>")
+
+    for ident in ("config-fundo", "modal-fundo"):
+        pos = html.index(f'id="{ident}"')
+        assert pos > fim_main, (
+            f"#{ident} está dentro de <main id='tela-revisao'>, que nasce "
+            "hidden — o modal não vai aparecer na tela inicial"
+        )

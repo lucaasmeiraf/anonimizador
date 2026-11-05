@@ -665,6 +665,22 @@ function mostrarTela(qual) {
   $("btn-atalhos").classList.toggle("hidden", qual === "tela-login");
 }
 
+/* O que o topo mostra depois que alguém entra.
+ *
+ * Função, e não duas linhas repetidas, porque há **dois** caminhos de
+ * entrada: recarregar a página com sessão viva (`abrir`) e entrar pelo
+ * formulário. Estava escrito só no primeiro, e o efeito era o defeito
+ * relatado em 2026-11-05: quem entrava pelo formulário não via a engrenagem,
+ * e só descobria a tela de configurações se recarregasse por acaso.
+ */
+function mostrarAcoesDeConta(eu) {
+  euSou = eu;
+  $("btn-sair").classList.remove("hidden");
+  // Só o dono administra acessos. O servidor recusa de qualquer forma com
+  // 403; esconder é para não oferecer o que a pessoa não pode fazer.
+  $("btn-config").classList.toggle("hidden", eu.papel !== "dono");
+}
+
 function erroEm(id, mensagem, ok = false) {
   const e = $(id);
   e.textContent = mensagem;
@@ -693,11 +709,7 @@ async function abrir() {
   }
 
   if (eu.exige_login) {
-    euSou = eu;
-    $("btn-sair").classList.remove("hidden");
-    // Só o dono administra acessos. O servidor recusa de qualquer forma;
-    // esconder é para não oferecer o que a pessoa não pode fazer.
-    $("btn-config").classList.toggle("hidden", eu.papel !== "dono");
+    mostrarAcoesDeConta(eu);
     if (eu.troca_senha_obrigatoria) {
       // Cai direto na troca, sem passar pela tela principal: sem essa trava a
       // senha temporária vira permanente.
@@ -739,7 +751,9 @@ $("form-entrar").addEventListener("submit", async (e) => {
       $("troca-atual").focus();
       return;
     }
-    $("btn-sair").classList.remove("hidden");
+    // `dados` traz papel e inquilino do login; é o mesmo formato de
+    // `/api/eu`, então o topo se monta pelo mesmo caminho.
+    mostrarAcoesDeConta({ ...dados, exige_login: true });
     mostrarTela("tela-upload");
     restaurarSessao();
   } catch {

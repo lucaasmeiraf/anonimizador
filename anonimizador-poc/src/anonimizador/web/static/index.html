@@ -681,8 +681,71 @@
     </div>
   </aside>
 
-  <!-- Configurações. Só o dono do inquilino vê o botão que abre isto; o
-     servidor recusa de qualquer forma (403), que é onde a regra mora. -->
+  <!-- Conclusão -->
+  <section id="tela-sucesso" class="sucesso-fundo hidden" role="dialog"
+           aria-modal="true" aria-labelledby="sucesso-titulo">
+    <div class="sucesso">
+      <div class="sucesso-icone" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+      </div>
+      <h2 id="sucesso-titulo">Documento anonimizado</h2>
+      <ul id="sucesso-resumo" class="sucesso-resumo"></ul>
+      <div id="sucesso-downloads" class="sucesso-downloads"></div>
+      <p class="auxiliar">
+        O documento original e a proposta de marcações são apagados do servidor
+        quando você sair desta revisão.
+      </p>
+      <div class="modal-acoes">
+        <button id="proximo-fechar" class="secundario">Continuar revisando</button>
+        <button id="proximo-inicio" class="secundario">Voltar ao início</button>
+        <button id="proximo-novo" class="primario">Anonimizar outro documento</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Dica ao passar o mouse sobre uma marcação. -->
+<div id="dica" class="dica hidden" role="tooltip"></div>
+
+<!-- Ações sobre uma marcação. -->
+<div id="popover-marca" class="popover hidden" role="dialog" aria-label="Ações sobre a marcação"></div>
+
+<!-- Ações sobre o texto selecionado no documento. -->
+<div id="balao" class="popover balao hidden" role="dialog" aria-label="Ação sobre a seleção">
+  <div class="balao-texto" id="balao-texto"></div>
+  <button id="balao-todas" class="primario pequeno">Anonimizar em todo o documento</button>
+  <button id="balao-tarjar" class="secundario pequeno">Só este trecho</button>
+</div>
+
+<!-- Atalhos. -->
+<div id="popover-atalhos" class="popover atalhos hidden" role="dialog" aria-label="Atalhos de teclado">
+  <h2 class="rotulo-grupo">Envio</h2>
+  <dl>
+    <dt><kbd>Ctrl</kbd> <kbd>O</kbd></dt><dd>Escolher um PDF</dd>
+    <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Colar um PDF copiado</dd>
+  </dl>
+  <h2 class="rotulo-grupo">Revisão</h2>
+  <dl>
+    <dt><kbd>J</kbd> <kbd>↓</kbd></dt><dd>Próxima ocorrência</dd>
+    <dt><kbd>K</kbd> <kbd>↑</kbd></dt><dd>Ocorrência anterior</dd>
+    <dt><kbd>Espaço</kbd></dt><dd>Anonimizar ou não a ocorrência em foco</dd>
+    <dt><kbd>Enter</kbd></dt><dd>Ações da ocorrência em foco</dd>
+    <dt><kbd>P</kbd></dt><dd>Ver como ficará</dd>
+    <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Fechar</dd>
+  </dl>
+</div>
+
+<!-- Confirmação de descarte. Substitui o `confirm()` do navegador, que além de
+     destoar da interface não permite explicar o que está sendo destruído. -->
+<!-- Configurações. Só o dono do inquilino vê o botão que abre isto; o
+     servidor recusa de qualquer forma (403), que é onde a regra mora.
+
+     FORA do <main id="tela-revisao">, e isso não é arrumação: aquele
+     elemento fica `hidden` enquanto não há documento aberto, e pai
+     oculto esconde o filho. Nascido lá dentro, o modal não aparecia —
+     o clique chamava a função, o `hidden` dele saía, e nada acontecia.
+     Defeito relatado em 2026-11-05. Irmão dos outros modais, como eles. -->
 <div id="config-fundo" class="modal-fundo hidden">
   <div id="tela-config" class="modal modal-largo" role="dialog" aria-modal="true"
        aria-labelledby="config-titulo">
@@ -741,63 +804,6 @@
   </div>
 </div>
 
-<!-- Conclusão -->
-  <section id="tela-sucesso" class="sucesso-fundo hidden" role="dialog"
-           aria-modal="true" aria-labelledby="sucesso-titulo">
-    <div class="sucesso">
-      <div class="sucesso-icone" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
-      </div>
-      <h2 id="sucesso-titulo">Documento anonimizado</h2>
-      <ul id="sucesso-resumo" class="sucesso-resumo"></ul>
-      <div id="sucesso-downloads" class="sucesso-downloads"></div>
-      <p class="auxiliar">
-        O documento original e a proposta de marcações são apagados do servidor
-        quando você sair desta revisão.
-      </p>
-      <div class="modal-acoes">
-        <button id="proximo-fechar" class="secundario">Continuar revisando</button>
-        <button id="proximo-inicio" class="secundario">Voltar ao início</button>
-        <button id="proximo-novo" class="primario">Anonimizar outro documento</button>
-      </div>
-    </div>
-  </section>
-</main>
-
-<!-- Dica ao passar o mouse sobre uma marcação. -->
-<div id="dica" class="dica hidden" role="tooltip"></div>
-
-<!-- Ações sobre uma marcação. -->
-<div id="popover-marca" class="popover hidden" role="dialog" aria-label="Ações sobre a marcação"></div>
-
-<!-- Ações sobre o texto selecionado no documento. -->
-<div id="balao" class="popover balao hidden" role="dialog" aria-label="Ação sobre a seleção">
-  <div class="balao-texto" id="balao-texto"></div>
-  <button id="balao-todas" class="primario pequeno">Anonimizar em todo o documento</button>
-  <button id="balao-tarjar" class="secundario pequeno">Só este trecho</button>
-</div>
-
-<!-- Atalhos. -->
-<div id="popover-atalhos" class="popover atalhos hidden" role="dialog" aria-label="Atalhos de teclado">
-  <h2 class="rotulo-grupo">Envio</h2>
-  <dl>
-    <dt><kbd>Ctrl</kbd> <kbd>O</kbd></dt><dd>Escolher um PDF</dd>
-    <dt><kbd>Ctrl</kbd> <kbd>V</kbd></dt><dd>Colar um PDF copiado</dd>
-  </dl>
-  <h2 class="rotulo-grupo">Revisão</h2>
-  <dl>
-    <dt><kbd>J</kbd> <kbd>↓</kbd></dt><dd>Próxima ocorrência</dd>
-    <dt><kbd>K</kbd> <kbd>↑</kbd></dt><dd>Ocorrência anterior</dd>
-    <dt><kbd>Espaço</kbd></dt><dd>Anonimizar ou não a ocorrência em foco</dd>
-    <dt><kbd>Enter</kbd></dt><dd>Ações da ocorrência em foco</dd>
-    <dt><kbd>P</kbd></dt><dd>Ver como ficará</dd>
-    <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom</dd>
-    <dt><kbd>Esc</kbd></dt><dd>Fechar</dd>
-  </dl>
-</div>
-
-<!-- Confirmação de descarte. Substitui o `confirm()` do navegador, que além de
-     destoar da interface não permite explicar o que está sendo destruído. -->
 <div id="modal-fundo" class="modal-fundo hidden">
   <div id="modal" class="modal" role="alertdialog" aria-modal="true"
        aria-labelledby="modal-titulo" aria-describedby="modal-corpo">
