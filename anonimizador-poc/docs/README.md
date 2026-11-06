@@ -8,6 +8,7 @@
 | [`04-implantacao.md`](04-implantacao.md) | passo a passo do zero ao ambiente do cliente, inclusive air-gap | quem instala e quem opera |
 | [`05-politica-llm.md`](05-politica-llm.md) | onde uma LLM entra, o que faz em cada ponto e a que dados tem acesso — normativo | quem projeta o copiloto e quem responde por LGPD |
 | [`06-resultados-fase-0.md`](06-resultados-fase-0.md) | leitura dos números do eval, correções aplicadas, decisão em aberto sobre o critério de recomendação e o que segue sem medição | quem decide a arquitetura da Fase 1 |
+| [`08-planos-e-papeis.md`](08-planos-e-papeis.md) | planos Individual e Empresa, papéis (admin/usuário), IA só no plano Empresa com a chave da empresa | quem decide produto e quem implementa acesso |
 | [`explicacao-para-o-cliente.html`](explicacao-para-o-cliente.html) | o que a ferramenta faz, garante e **não** faz, em linguagem natural — sem jargão técnico | cliente final, decisor, encarregado de dados |
 
 O escopo e os decision gates da fase atual estão em

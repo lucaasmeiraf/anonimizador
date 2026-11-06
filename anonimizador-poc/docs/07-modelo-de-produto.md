@@ -28,6 +28,11 @@ Dois planos:
 | Análise por LLM | não | adicional opcional |
 | Agentes configuráveis | não | adicional opcional, por contratante |
 
+> **Atualização de 2026-11-05.** O recorte de funcionalidade de cada plano
+> ("Individual" e "Empresa"), os papéis de acesso e a decisão de que a IA usa
+> a chave de API **da empresa** estão em
+> [`08-planos-e-papeis.md`](08-planos-e-papeis.md).
+
 A separação é boa e vale ser dita: **o plano PF não precisa de banco para nada
 além de saber quem é você.** Sem histórico, sem auditoria, sem retenção. Isso
 preserva, para aquele plano, a garantia mais forte que o produto tem.
