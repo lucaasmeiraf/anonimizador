@@ -163,7 +163,10 @@
 
       <p id="troca-erro" class="aviso-entrada hidden" role="alert"></p>
 
-      <button id="btn-trocar" type="submit" class="primario largo">
+      <!-- `btn-trocar-senha`, não `btn-trocar`: esse id já é do botão "Trocar"
+           arquivo, e `getElementById` devolve o primeiro do documento — este.
+           Com o id repetido, o clique daqui também abria o seletor de PDF. -->
+      <button id="btn-trocar-senha" type="submit" class="primario largo">
         Trocar senha e continuar
       </button>
     </form>

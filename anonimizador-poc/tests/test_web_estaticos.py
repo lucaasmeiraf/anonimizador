@@ -141,6 +141,24 @@ def test_todo_id_usado_pelo_js_existe_no_html():
     assert not (ids_js - ids_html), f"ids ausentes no HTML: {ids_js - ids_html}"
 
 
+def test_nenhum_id_se_repete_no_html():
+    """`getElementById` devolve o primeiro; o segundo fica sem comportamento.
+
+    Aconteceu em 2026-11-05: `btn-trocar` era o "Trocar" arquivo **e** o
+    botão de enviar a troca de senha. O ouvinte do seletor de PDF se prendia
+    ao da senha, e o primeiro acesso abria o fichário por cima do login.
+    """
+    from collections import Counter
+
+    html = (ESTATICOS / "index.html").read_text(encoding="utf-8")
+    # Comentário cita id de propósito (explica por que o modal mora fora do
+    # `<main>`); só conta o que é atributo de verdade.
+    sem_comentario = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+    ids = re.findall(r'\bid="([^"]+)"', sem_comentario)
+    repetidos = [i for i, n in Counter(ids).items() if n > 1]
+    assert not repetidos, f"ids repetidos no HTML: {repetidos}"
+
+
 def test_tamanho_da_fonte_da_camada_de_texto_nao_usa_porcentagem():
     """O erro de unidade que quebrou a seleção inteira.
 
@@ -682,8 +700,10 @@ def test_os_dois_caminhos_de_entrada_montam_o_topo_igual():
     """
     js = (ESTATICOS / "app.js").read_text(encoding="utf-8")
     assert js.count("function mostrarAcoesDeConta") == 1
-    assert js.count("mostrarAcoesDeConta(") == 3, (
-        "esperado: a definição mais as duas chamadas (abrir e login)"
+    # Três caminhos desde 2026-11-05: a troca de senha do primeiro acesso
+    # também entra direto, sem passar de novo pelo formulário de login.
+    assert js.count("mostrarAcoesDeConta(") == 4, (
+        "esperado: a definição mais as três chamadas (abrir, login, troca de senha)"
     )
     # E ninguém revela o botão por fora dela.
     assert js.count('$("btn-config").classList.toggle') == 1

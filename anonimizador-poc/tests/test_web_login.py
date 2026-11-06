@@ -238,19 +238,50 @@ def test_sem_cookie_de_sessao_nao_se_exige_csrf(cliente_local, tmp_pdf):
 # --------------------------------------------------------------------------
 # Troca de senha
 # --------------------------------------------------------------------------
-def test_trocar_senha_derruba_a_sessao_e_a_antiga_para_de_valer(cliente_login):
+def test_trocar_senha_derruba_as_sessoes_e_a_antiga_para_de_valer(cliente_login):
     assert _entrar(cliente_login).status_code == 200
+    token_antigo = cliente_login.cookies[app_mod.COOKIE_SESSAO]
     r = cliente_login.post(
         "/api/senha",
         json={"atual": SENHA, "nova": "outra senha bem comprida 456"},
         headers=_com_csrf(cliente_login),
     )
     assert r.status_code == 200, r.text
-    assert r.json()["entrar_de_novo"] is True
 
-    assert cliente_login.get("/api/doc/qualquer").status_code == 401
+    # O token de antes da troca morreu — é o que derruba quem já estava dentro.
+    r = cliente_login.get(
+        "/api/doc/qualquer", cookies={app_mod.COOKIE_SESSAO: token_antigo}
+    )
+    assert r.status_code == 401
     assert _entrar(cliente_login, senha=SENHA).status_code == 401
     assert _entrar(cliente_login, senha="outra senha bem comprida 456").status_code == 200
+
+
+def test_trocar_senha_segue_logado_com_token_novo(cliente_login):
+    """Primeiro acesso: troca a senha e cai na tela inicial, sem novo login.
+
+    Quem fez a requisição já provou a senha atual. O token novo é outro — o
+    antigo não é reaproveitado — e a obrigação de trocar fica para trás.
+    """
+    assert _entrar(cliente_login).status_code == 200
+    token_antigo = cliente_login.cookies[app_mod.COOKIE_SESSAO]
+    r = cliente_login.post(
+        "/api/senha",
+        json={"atual": SENHA, "nova": "outra senha bem comprida 456"},
+        headers=_com_csrf(cliente_login),
+    )
+    assert r.status_code == 200, r.text
+    corpo = r.json()
+    assert corpo["papel"] == DONO
+    assert corpo["troca_senha_obrigatoria"] is False
+
+    token_novo = cliente_login.cookies[app_mod.COOKIE_SESSAO]
+    assert token_novo != token_antigo
+    eu = cliente_login.get("/api/eu")
+    assert eu.status_code == 200
+    assert eu.json()["troca_senha_obrigatoria"] is False
+    # 404 e não 401: a sessão nova autentica.
+    assert cliente_login.get("/api/doc/inexistente").status_code == 404
 
 
 def test_senha_nova_curta_e_recusada(cliente_login):

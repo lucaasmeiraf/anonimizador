@@ -396,21 +396,34 @@ def logout(request: Request, resposta: Response) -> dict:
 def trocar_senha(
     corpo: TrocaDeSenha, resposta: Response, usuario=Depends(usuario_atual)
 ) -> dict:
-    """Troca a senha e derruba **todas** as sessões, inclusive esta.
+    """Troca a senha, derruba **todas** as sessões e abre uma nova só para esta.
 
-    Derrubar a própria sessão é intencional: quem troca a senha porque suspeita
-    de acesso indevido precisa que o outro lado caia. O preço é um login novo,
-    e é pequeno.
+    Derrubar todas continua sendo o ponto: quem troca a senha porque suspeita
+    de acesso indevido precisa que o outro lado caia — e cai, inclusive o
+    token que este navegador usava até agora. O que mudou em 2026-11-05 é que
+    este navegador recebe um token **novo** na mesma transação, em vez de ser
+    mandado de volta ao login. Pedir de novo a senha que a pessoa acabou de
+    digitar duas vezes não comprava segurança: quem fez esta requisição já
+    provou a senha atual e acabou de definir a nova.
     """
     if usuario is None:
         raise HTTPException(409, "este servidor roda em modo local, sem login")
     try:
         with db.sessao() as s:
-            auth.trocar_senha(s, s.get(type(usuario), usuario.id), corpo.atual, corpo.nova)
+            u = s.get(type(usuario), usuario.id)
+            auth.trocar_senha(s, u, corpo.atual, corpo.nova)
+            token = auth.abrir_sessao(s, u)
+            papel, inquilino_id = u.papel, u.inquilino_id
     except auth.FalhaDeLogin as exc:
         raise HTTPException(401, str(exc)) from exc
-    _apagar_cookies(resposta)
-    return {"trocada": True, "entrar_de_novo": True}
+    csrf = _plantar_cookies(resposta, token)
+    return {
+        "trocada": True,
+        "papel": papel,
+        "inquilino_id": inquilino_id,
+        "troca_senha_obrigatoria": False,
+        "csrf": csrf,
+    }
 
 
 def pegar_sessao(doc_id: str, usuario=Depends(usuario_atual)) -> Sessao:

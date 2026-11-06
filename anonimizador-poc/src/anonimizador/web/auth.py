@@ -354,7 +354,10 @@ def autenticar(
 
 
 def trocar_senha(s: Session, usuario: Usuario, atual: str, nova: str) -> None:
-    """Troca a senha, confere a atual e derruba as outras sessões.
+    """Troca a senha, confere a atual e derruba todas as sessões.
+
+    Todas, inclusive a de quem chamou. Quem quiser seguir logado abre uma
+    sessão nova depois — é o que `app.trocar_senha` faz.
 
     Pede a senha atual mesmo com a sessão já autenticada: sem isso, um XSS ou
     um navegador deixado aberto troca a senha e toma a conta. É a mesma razão

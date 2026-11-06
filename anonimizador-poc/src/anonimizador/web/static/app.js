@@ -769,7 +769,7 @@ $("form-trocar").addEventListener("submit", async (e) => {
     erroEm("troca-erro", "as duas senhas novas não são iguais");
     return;
   }
-  const botao = $("btn-trocar");
+  const botao = $("btn-trocar-senha");
   botao.disabled = true;
   erroEm("troca-erro", "");
   try {
@@ -789,15 +789,18 @@ $("form-trocar").addEventListener("submit", async (e) => {
       );
       return;
     }
-    // A troca derruba TODAS as sessões, inclusive esta — de propósito. Volta
-    // para a entrada com a senha nova.
+    // A troca derruba TODAS as sessões, inclusive o token que este navegador
+    // usava — de propósito. A resposta já traz um token novo (cookie) e o
+    // mesmo formato do login, então segue direto para a tela inicial, pelo
+    // mesmo caminho do login bem-sucedido.
     for (const id of ["troca-atual", "troca-nova", "troca-repete"]) {
       $(id).value = "";
     }
     $("form-trocar").classList.add("hidden");
     $("form-entrar").classList.remove("hidden");
-    erroEm("login-erro", "Senha trocada. Entre com a senha nova.", true);
-    $("login-email").focus();
+    mostrarAcoesDeConta({ ...dados, exige_login: true });
+    mostrarTela("tela-upload");
+    restaurarSessao();
   } catch {
     erroEm("troca-erro", "não foi possível falar com o servidor");
   } finally {
